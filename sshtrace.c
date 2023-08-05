@@ -20,8 +20,11 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz)
 { 
 	struct data_t *m = data;
+	//printf("%d\n",m->client_ip);
 	char ipAddress[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &(m->client_ip), ipAddress, INET_ADDRSTRLEN);
+    struct sockaddr_in *ip = (struct sockaddr_in *)&(m->client_ip);
+	//printf("%x %s",bpf_ntohl(ip->sin_addr.s_addr), "start");
+    inet_ntop(AF_INET, &(ip->sin_addr), ipAddress, INET_ADDRSTRLEN);
 	printf("%-6d %-6d %-16s %s %s\n", m->pid, m->uid, m->command, ipAddress, m->message);
 	//printf("%-6d %-6d %-16s %-16d %s %s\n", m->pid, m->uid, m->command, m->sockaddr.sa_family, m->sockaddr.sa_data, m->message);
 }
@@ -55,7 +58,7 @@ int main()
 	}
 
 	err = sshtrace_bpf__load(skel);
-	/*
+	///*
 	// Print the verifier log
 	for (int i=0; i < sizeof(log_buf); i++) {
 		if (log_buf[i] == 0 && log_buf[i+1] == 0) {
@@ -63,7 +66,7 @@ int main()
 		}
 		printf("%c", log_buf[i]);
 	}
-	*/
+	//*/
 	if (err) {
 		printf("Failed to load BPF object\n");
 		sshtrace_bpf__destroy(skel);

@@ -2,6 +2,7 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
+#include <bpf/bpf_endian.h>
 #include "sshtrace.h"
 
 const char tp_btf_exec_msg[16] = "tp_getpeername";
@@ -27,7 +28,7 @@ struct my_syscalls_enter_getpeername {
 
    long syscall_nr;
    long fd;
-   void *usockaddr_ptr; //struct sockaddr *usockaddr;
+   struct sockaddr *usockaddr_ptr; //struct sockaddr *usockaddr;
    long usockaddr_len;
 };
 
@@ -37,13 +38,15 @@ int tp_sys_enter_getpeername(struct my_syscalls_enter_getpeername *ctx)
 {
    
    struct data_t data = {}; 
-   //accept_args.addr = (struct sockaddr_in *)ctx->usockaddr_ptr;
-   struct sockaddr_in *ip = (struct sockaddr_in *)ctx->usockaddr_ptr;
-   __be32 *c_ip = &ip->sin_addr.s_addr;
-   bpf_printk("%ld %s\n", c_ip, "start");
-   if (c_ip>0){
-       bpf_core_read(&data.client_ip,sizeof(data.client_ip), &c_ip);
-   }
+   //bpf_printk("%ld %s\n", ctx->usockaddr_ptr.sa_family, "ptr");
+
+   //struct sockaddr_in *ip = (struct sockaddr_in *)ctx->usockaddr_ptr;
+   //bpf_printk("%ld %s\n", c_ip, "start");
+   //int c_ip = bpf_ntohl(&ip->sin_addr.s_addr);
+   //bpf_printk("%ld %s\n", c_ip, "start");
+
+   bpf_probe_read_kernel(&data.client_ip,sizeof(data.client_ip), &(ctx->usockaddr_ptr));
+   
    bpf_printk("%ld\n", data.client_ip);
 
    bpf_probe_read_kernel(&data.message, sizeof(data.message), tp_btf_exec_msg);
