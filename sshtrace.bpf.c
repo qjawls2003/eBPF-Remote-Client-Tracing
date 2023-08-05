@@ -27,29 +27,39 @@ struct my_syscalls_enter_getpeername {
 
    long syscall_nr;
    long fd;
-   void *sockaddr_ptr; //struct sockaddr *usockaddr;
+   void *usockaddr_ptr; //struct sockaddr *usockaddr;
    long usockaddr_len;
 };
+
 
 SEC("tp/syscalls/sys_enter_getpeername")
 int tp_sys_enter_getpeername(struct my_syscalls_enter_getpeername *ctx)
 {
+   
    struct data_t data = {}; 
-   // pid_t pid = ctx->pid; 
-   bpf_probe_read_kernel(&data.message, sizeof(data.message), tp_btf_exec_msg);
-   //bpf_probe_read_kernel(&data.sockaddr, sizeof(data.sockaddr), &ctx->sockaddr_ptr);
+   //accept_args.addr = (struct sockaddr_in *)ctx->usockaddr_ptr;
+   struct sockaddr_in *ip = (struct sockaddr_in *)ctx->usockaddr_ptr;
+   __be32 *c_ip = &ip->sin_addr.s_addr;
+   bpf_printk("%ld %s\n", c_ip, "start");
+   if (c_ip>0){
+       bpf_core_read(&data.client_ip,sizeof(data.client_ip), &c_ip);
+   }
+   bpf_printk("%ld\n", data.client_ip);
 
-   //bpf_probe_read_user_str(&data.sa_data, sizeof(data.sa_data), ctx->sockaddr_ptr->sa_data);
-   //bpf_probe_read_user_str(&data.addr, sizeof(data.addr), ctx->);
+   bpf_probe_read_kernel(&data.message, sizeof(data.message), tp_btf_exec_msg);
    data.pid = bpf_get_current_pid_tgid() >> 32;
    data.uid = bpf_get_current_uid_gid() & 0xFFFFFFFF;
    bpf_get_current_comm(&data.command, sizeof(data.command));
+   
+   //bpf_probe_read(&data.client_ip, sizeof(data.client_ip), &ip->sin_addr.s_addr);
 
+   //bpf_printk("%ld\n", data.client_ip);
    // TODO!! Resolve issues accessing data that isn't aligned to an 8-byte boundary
    // bpf_printk("%s %d\n", tp_btf_exec_msg, pid);
    // bpf_probe_read_kernel_str(&data.command, sizeof(data.command), ctx->pid); 
 
    bpf_perf_event_output(ctx, &output, BPF_F_CURRENT_CPU, &data, sizeof(data));
+    
    return 0;
 }
 

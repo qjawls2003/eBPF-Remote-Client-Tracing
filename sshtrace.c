@@ -2,12 +2,15 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <bpf/libbpf.h>
 #include "sshtrace.h"
 #include "sshtrace.skel.h"
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
 {
+	
 	if (level >= LIBBPF_DEBUG)
 		return 0;
 
@@ -15,10 +18,12 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 }
 
 void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz)
-{
+{ 
 	struct data_t *m = data;
-
-	printf("%-6d %-6d %-16s %-16d %s %s\n", m->pid, m->uid, m->command, m->sockaddr.sa_family, m->sockaddr.sa_data, m->message);
+	char ipAddress[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(m->client_ip), ipAddress, INET_ADDRSTRLEN);
+	printf("%-6d %-6d %-16s %s %s\n", m->pid, m->uid, m->command, ipAddress, m->message);
+	//printf("%-6d %-6d %-16s %-16d %s %s\n", m->pid, m->uid, m->command, m->sockaddr.sa_family, m->sockaddr.sa_data, m->message);
 }
 
 void lost_event(void *ctx, int cpu, long long unsigned int data_sz)
@@ -28,7 +33,8 @@ void lost_event(void *ctx, int cpu, long long unsigned int data_sz)
 
 int main()
 {
-    struct sshtrace_bpf *skel;
+    printf("%s", "Starting...\n");
+	struct sshtrace_bpf *skel;
 	// struct bpf_object_open_opts *o;
     int err;
 	struct perf_buffer *pb = NULL;
@@ -49,6 +55,7 @@ int main()
 	}
 
 	err = sshtrace_bpf__load(skel);
+	/*
 	// Print the verifier log
 	for (int i=0; i < sizeof(log_buf); i++) {
 		if (log_buf[i] == 0 && log_buf[i+1] == 0) {
@@ -56,7 +63,7 @@ int main()
 		}
 		printf("%c", log_buf[i]);
 	}
-	
+	*/
 	if (err) {
 		printf("Failed to load BPF object\n");
 		sshtrace_bpf__destroy(skel);
@@ -70,7 +77,7 @@ int main()
 		sshtrace_bpf__destroy(skel);
         return 1;
 	}
-
+	    //printf("%s", "Creating buffer...");
 	pb = perf_buffer__new(bpf_map__fd(skel->maps.output), 8, handle_event, lost_event, NULL, NULL);
 	if (!pb) {
 		err = -1;
@@ -80,8 +87,10 @@ int main()
 	}
 
 	while (true) {
+		
 		err = perf_buffer__poll(pb, 100 /* timeout, ms */);
 		// Ctrl-C gives -EINTR
+		
 		if (err == -EINTR) {
 			err = 0;
 			break;
