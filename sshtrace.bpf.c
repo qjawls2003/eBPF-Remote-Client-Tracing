@@ -5,7 +5,7 @@
 #include <bpf/bpf_endian.h>
 #include "sshtrace.h"
 
-const char tp_btf_exec_msg[16] = "tp_getpeername";
+const char tp_btf_exec_msg[19] = "tp_sys_enter_accept";
 
 struct {
     __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
@@ -20,34 +20,36 @@ struct {
     __type(value, struct msg_t);
 } my_config SEC(".maps");
 
-struct my_syscalls_enter_getpeername {
+struct my_syscalls_enter_accept {
    unsigned short common_type;
    unsigned char common_flags;
    unsigned char common_preempt_count;
    int common_pid;
 
-   long syscall_nr;
+   int syscall_nr;
    long fd;
-   struct sockaddr *usockaddr_ptr; //struct sockaddr *usockaddr;
-   long usockaddr_len;
+   struct sockaddr * upeer_sockaddr; //struct sockaddr *usockaddr;
+   int * upeer_addrlen;
 };
 
 
-SEC("tp/syscalls/sys_enter_getpeername")
-int tp_sys_enter_getpeername(struct my_syscalls_enter_getpeername *ctx)
+SEC("tp/syscalls/sys_enter_accept")
+int tp_sys_enter_accept(struct my_syscalls_enter_accept *ctx)
 {
    
    struct data_t data = {}; 
-   //bpf_printk("%ld %s\n", ctx->usockaddr_ptr.sa_family, "ptr");
 
    //struct sockaddr_in *ip = (struct sockaddr_in *)ctx->usockaddr_ptr;
    //bpf_printk("%ld %s\n", c_ip, "start");
    //int c_ip = bpf_ntohl(&ip->sin_addr.s_addr);
    //bpf_printk("%ld %s\n", c_ip, "start");
 
-   bpf_probe_read_kernel(&data.client_ip,sizeof(data.client_ip), &(ctx->usockaddr_ptr));
+   int err = bpf_probe_read_user(&data.client_ip, sizeof(data.client_ip), ctx->upeer_sockaddr);
+   if (err != 0) {
+      bpf_printk("Error");
+   }
    
-   bpf_printk("%ld\n", data.client_ip);
+   //bpf_printk("%ld\n", data.client_ip);
 
    bpf_probe_read_kernel(&data.message, sizeof(data.message), tp_btf_exec_msg);
    data.pid = bpf_get_current_pid_tgid() >> 32;
