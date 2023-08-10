@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <bpf/libbpf.h>
+#include <bpf/bpf.h>
 #include "sshtrace.h"
 #include "sshtrace.skel.h"
 
@@ -20,13 +21,17 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz)
 { 
 	struct data_t *m = data;
+	char str1[] = "sshd";
+	char str2[] = "ls";
 	//struct sockaddr temp = *m->client_ip;
 	//printf("%s\n", temp);
-	//printf("%d\n",m->client_ip);
 	char ipAddress[INET_ADDRSTRLEN] = {0};
 	//struct sockaddr_in *ip = (struct sockaddr_in *)m->client_ip;
 	inet_ntop(AF_INET, &m->addr.sin_addr, ipAddress, INET_ADDRSTRLEN);
-	printf("%-6d %-6d %-16s %16s\n", m->pid, m->uid, m->command, ipAddress);
+	if (strcmp(str1,m->command) == 0 || strcmp(str2,m->command) == 0){
+       	printf("%-6d %-6d %-16s %16s\n", m->pid, m->ppid, m->command, ipAddress);
+	}
+
 }
 
 void lost_event(void *ctx, int cpu, long long unsigned int data_sz)
@@ -37,6 +42,8 @@ void lost_event(void *ctx, int cpu, long long unsigned int data_sz)
 int main()
 {
     printf("%s", "Starting...\n");
+	printf("%-6s %-6s %-16s %16s\n", "PID", "UID", "Command", "IP Address");
+
 	struct sshtrace_bpf *skel;
 	// struct bpf_object_open_opts *o;
     int err;
@@ -44,7 +51,7 @@ int main()
 
 	libbpf_set_print(libbpf_print_fn);
 
-	char log_buf[64 * 1024];
+	char log_buf[128 * 1024];
 	LIBBPF_OPTS(bpf_object_open_opts, opts,
 		.kernel_log_buf = log_buf,
 		.kernel_log_size = sizeof(log_buf),
