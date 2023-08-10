@@ -1,11 +1,7 @@
 struct data_t {
-   int pid;
-   int uid;
+   __u32 pid;
+   __u32 uid;
    char command[16];
-   char message[19];
-   struct sockaddr *client_ip;
-};
-
-struct msg_t {
-   char message[12];
+   int ret;
+   struct sockaddr_in addr;
 };

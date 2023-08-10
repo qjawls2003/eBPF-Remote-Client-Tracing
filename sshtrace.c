@@ -19,12 +19,14 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 
 void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz)
 { 
-	struct data_t * m = data;
+	struct data_t *m = data;
+	//struct sockaddr temp = *m->client_ip;
+	//printf("%s\n", temp);
 	//printf("%d\n",m->client_ip);
-	char ipAddress[INET_ADDRSTRLEN];
-	struct sockaddr_in *ip = (struct sockaddr_in *)&m->client_ip;
-	inet_ntop(AF_INET, &(ip->sin_addr), ipAddress, INET_ADDRSTRLEN);
-	printf("%-6d %-6d %-16s %s %s\n", m->pid, m->uid, m->command, ipAddress, m->message);
+	char ipAddress[INET_ADDRSTRLEN] = {0};
+	//struct sockaddr_in *ip = (struct sockaddr_in *)m->client_ip;
+	inet_ntop(AF_INET, &m->addr.sin_addr, ipAddress, INET_ADDRSTRLEN);
+	printf("%-6d %-6d %-16s %16s\n", m->pid, m->uid, m->command, ipAddress);
 }
 
 void lost_event(void *ctx, int cpu, long long unsigned int data_sz)
