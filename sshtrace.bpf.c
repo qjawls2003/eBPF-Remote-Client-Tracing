@@ -33,6 +33,7 @@ struct {
     __uint(max_entries, 10240);
     __type(key, pid_t);
     __type(value, struct sockaddr_in *);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
 }  raw_sockaddr SEC(".maps");
 
 struct {
@@ -71,11 +72,11 @@ static int probe_return(void *ctx, int ret)
    data.uid = uid;
    data.ret = ret;
    bpf_get_current_comm(&data.command, sizeof(data.command));
-   bpf_probe_read_user(&data.addr, sizeof(data.addr), addr);
+   int err = bpf_probe_read_user(&data.addr, sizeof(data.addr), addr);
    bpf_map_update_elem(&raw_sockaddr, &pid, &data.addr, BPF_ANY);
   
-   bpf_printk("PPID getpeername_exit map: %d", addr);
-   //bpf_perf_event_output(ctx, &output, BPF_F_CURRENT_CPU, &data, sizeof(data));
+   bpf_printk("PPID getpeername_exit map: %d PID: %d Error: %d", addr, data.pid, err);
+   bpf_perf_event_output(ctx, &output, BPF_F_CURRENT_CPU, &data, sizeof(data));
    return 0;
 }
 
@@ -185,7 +186,7 @@ int tracepoint__syscalls__sys_exit_execve(struct trace_event_raw_sys_exit* ctx)
 	int ret;
   	struct task_struct *task;
    //struct sockaddr_in **addrpp;
-   struct sockaddr_in *addr;
+   //struct sockaddr_in *addr;
    pid_t ppid;
 	//struct event *event;
    struct data_t data = {}; //copy
@@ -209,11 +210,10 @@ int tracepoint__syscalls__sys_exit_execve(struct trace_event_raw_sys_exit* ctx)
   
    task = (struct task_struct*)bpf_get_current_task();
    ppid = (pid_t)BPF_CORE_READ(task, real_parent, tgid);
-   addr = bpf_map_lookup_elem(&raw_sockaddr, &ppid);
+   //addrpp = bpf_map_lookup_elem(&values, &ppid);
 
-   bpf_printk("PPID execv map: %d", addr);
-   //if (!addr)
-   //   return 0;
+   //if (!addrpp)
+      //return 0;
    //e.pid = event->pid;
 
    //e.ppid = event->ppid;
@@ -230,12 +230,13 @@ int tracepoint__syscalls__sys_exit_execve(struct trace_event_raw_sys_exit* ctx)
    data.ret = ret;
    data.ppid = ppid;
    bpf_get_current_comm(&data.command, sizeof(data.command));
-   bpf_probe_read_user(&data.addr, sizeof(data.addr), addr);
+   //int err = bpf_probe_read_kernel(&data.addr, sizeof(data.addr), addr);
+   //bpf_printk("PPID execv map: %d PPID: %d Error: %d", addr, data.ppid, err);
 
 
 	//size_t len = EVENT_SIZE(e);
 	//if (len <= sizeof(e))
-	bpf_perf_event_output(ctx, &output, BPF_F_CURRENT_CPU, &data, sizeof(data));
+	//bpf_perf_event_output(ctx, &output, BPF_F_CURRENT_CPU, &data, sizeof(data));
 
 cleanup:
 	bpf_map_delete_elem(&execs, &pid);

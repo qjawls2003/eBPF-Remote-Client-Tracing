@@ -19,6 +19,7 @@ struct data_t {
    char command[TASK_COMM_LEN];
    int ret;
    struct sockaddr_in addr;
+   //int ip_addr;
 };
 
 struct event {

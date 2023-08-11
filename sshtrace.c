@@ -21,17 +21,33 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz)
 { 
 	struct data_t *m = data;
-	char str1[] = "sshd";
-	char str2[] = "ls";
+	//char str1[] = "sshd";
+	//char str2[] = "ls";
 	//struct sockaddr temp = *m->client_ip;
-	//printf("%s\n", temp);
-	char ipAddress[INET_ADDRSTRLEN] = {0};
-	//struct sockaddr_in *ip = (struct sockaddr_in *)m->client_ip;
-	inet_ntop(AF_INET, &m->addr.sin_addr, ipAddress, INET_ADDRSTRLEN);
-	if (strcmp(str1,m->command) == 0 || strcmp(str2,m->command) == 0){
-       	printf("%-6d %-6d %-16s %16s\n", m->pid, m->ppid, m->command, ipAddress);
-	}
+	//printf("Here \n");
 
+    struct sockaddr_in ip;
+	char ipAddress[INET_ADDRSTRLEN] = {0};
+    uint16_t port;
+	int err;
+	int val = bpf_obj_get("/sys/fs/bpf/raw_sockaddr"); //BASH PID -> IP
+    if (val <= 0) {
+        printf("No FD\n");
+    } else {
+        err = bpf_map_lookup_elem(val, &m->ppid, &ip);
+    }
+
+	if (!err){
+	//inet_ntop(AF_INET, &(ip.sin_addr), ipAddress, INET_ADDRSTRLEN);
+	inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
+    port = htons(m->addr.sin_port);
+
+    printf("%-6d %-6d %-16s %16s %d\n", m->pid, m->ppid, m->command, ipAddress, port);
+	} else {
+	inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
+    port = htons(m->addr.sin_port);
+    printf("%-6d %-6d %-16s %16s %d\n", m->pid, m->ppid, m->command, ipAddress, port);
+	}
 }
 
 void lost_event(void *ctx, int cpu, long long unsigned int data_sz)
@@ -42,7 +58,7 @@ void lost_event(void *ctx, int cpu, long long unsigned int data_sz)
 int main()
 {
     printf("%s", "Starting...\n");
-	printf("%-6s %-6s %-16s %16s\n", "PID", "UID", "Command", "IP Address");
+	printf("%-6s %-6s %-16s %16s\n", "PID", "PPID", "Command", "IP Address");
 
 	struct sshtrace_bpf *skel;
 	// struct bpf_object_open_opts *o;
@@ -65,7 +81,7 @@ int main()
 	}
 
 	err = sshtrace_bpf__load(skel);
-	///*
+	/*
 	// Print the verifier log
 	for (int i=0; i < sizeof(log_buf); i++) {
 		if (log_buf[i] == 0 && log_buf[i+1] == 0) {
@@ -73,7 +89,7 @@ int main()
 		}
 		printf("%c", log_buf[i]);
 	}
-	//*/
+	*/
 	if (err) {
 		printf("Failed to load BPF object\n");
 		sshtrace_bpf__destroy(skel);
