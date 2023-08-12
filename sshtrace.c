@@ -49,7 +49,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz)
 		//port = htons(m->addr.sin_port);
 		printf("%-6d %-6d %-6d %-16s %-16s %16s %d\n", m->pid, m->ppid, m->uid, user, m->command, ipAddress, port);
 
-	} else if (!err && m->type_id==1) { //getpeername
+	} else if (m->type_id==1) { //getpeername
 		inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
 		port = htons(m->addr.sin_port);
 		if (!strncmp(ipAddress,"127.0.0.1",INET_ADDRSTRLEN)) {
@@ -65,8 +65,8 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz)
 //int bpf_map_update_elem(int fd, const void *key, const void *value, __u64 flags);
 			}
 		}
-		//printf("%-6d %-6d %-16s %16s %d\n", m->pid, m->ppid, m->command, ipAddress, port);
-	} else if (!err && m->type_id==2) { //getsockname
+		printf("%-6d %-6d %-6d %-16s %-16s %16s %d\n", m->pid, m->ppid, m->uid,user, m->command, ipAddress, port);
+	} else if (m->type_id==2) { //getsockname
 		inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
 		port = htons(m->addr.sin_port);
 		if (!strncmp(ipAddress,"127.0.0.1",INET_ADDRSTRLEN)) {
@@ -79,8 +79,9 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz)
 			}
 			//ip is already looked up. 
 		}
+		printf("%-6d %-6d %-6d %-16s %-16s %16s %d\n", m->pid, m->ppid, m->uid,user, m->command, ipAddress, port);
 	} else { //process tree trace back to original bash/user
-		printf("%-6d %-6d %-6d %-16s %16s %d\n", m->pid, m->ppid, m->uid, m->command, "localhost", 0);
+		printf("%-6d %-6d %-6d %-16s %-16s %16s %d\n", m->pid, m->ppid, m->uid, user, m->command, "localhost", 0);
 	}
 }
 
