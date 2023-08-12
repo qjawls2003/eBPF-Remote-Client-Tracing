@@ -36,6 +36,16 @@ struct {
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
 }  raw_sockaddr SEC(".maps");
 
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 10240);
+    __type(key, uint16_t);
+    __type(value, struct sockaddr_in *);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+}  raw_port SEC(".maps");
+
+
 struct {
 	__uint(type, BPF_MAP_TYPE_CGROUP_ARRAY);
 	__type(key, u32);
@@ -43,7 +53,7 @@ struct {
 	__uint(max_entries, 1);
 } cgroup_map SEC(".maps");
 
-static int probe_entry(void *ctx, struct sockaddr_in *addr)
+static int probe_entry_getpeername(void *ctx, struct sockaddr_in *addr)
 {
    __u64 id = bpf_get_current_pid_tgid();
    //__u32 pid = id >> 32;
@@ -53,7 +63,7 @@ static int probe_entry(void *ctx, struct sockaddr_in *addr)
    return 0;
 };
 
-static int probe_return(void *ctx, int ret)
+static int probe_return_getpeername(void *ctx, int ret)
 {
    __u64 id = bpf_get_current_pid_tgid();
    pid_t pid = id >> 32;
@@ -68,31 +78,94 @@ static int probe_return(void *ctx, int ret)
       return 0;
    
    addr = *addrpp;
+   //only need for conditional
    data.pid = pid;
    data.uid = uid;
    data.ret = ret;
    bpf_get_current_comm(&data.command, sizeof(data.command));
+   data.type_id = 1;
    int err = bpf_probe_read_user(&data.addr, sizeof(data.addr), addr);
    bpf_map_update_elem(&raw_sockaddr, &pid, &data.addr, BPF_ANY);
   
-   bpf_printk("PPID getpeername_exit map: %d PID: %d Error: %d", addr, data.pid, err);
-   bpf_perf_event_output(ctx, &output, BPF_F_CURRENT_CPU, &data, sizeof(data));
+   //typedef u64 (*btf_bpf_strncmp)(const char *, u32, const char *);
+   int res = bpf_strncmp(data.command,8,"sshd");
+   if (!res) {
+	   //bpf_printk("Command: %s , %s Res: %d",str1, data.command, res);
+	   bpf_perf_event_output(ctx, &output, BPF_F_CURRENT_CPU, &data, sizeof(data));
+   }
+	
    return 0;
 }
 
 
+static int probe_entry_getsockname(void *ctx, struct sockaddr_in *addr)
+{
+   __u64 id = bpf_get_current_pid_tgid();
+   //__u32 pid = id >> 32;
+   pid_t tid = (__u32)id;
+
+   bpf_map_update_elem(&values, &tid, &addr, BPF_ANY);
+   return 0;
+};
+
+static int probe_return_getsockname(void *ctx, int ret)
+{
+   __u64 id = bpf_get_current_pid_tgid();
+   pid_t pid = id >> 32;
+   pid_t tid = (__u32)id;
+   uid_t uid = bpf_get_current_uid_gid() & 0xFFFFFFFF;
+   struct sockaddr_in **addrpp;
+   struct sockaddr_in *addr;
+   struct data_t data = {};
+
+   addrpp = bpf_map_lookup_elem(&values, &tid);
+   if (!addrpp)
+      return 0;
+   
+   addr = *addrpp;
+   //only need for conditional
+   data.pid = pid;
+   data.uid = uid;
+   data.ret = ret;
+   bpf_get_current_comm(&data.command, sizeof(data.command));
+   data.type_id = 2;
+   int err = bpf_probe_read_user(&data.addr, sizeof(data.addr), addr);
+   //bpf_map_update_elem(&raw_sockaddr, &pid, &data.addr, BPF_ANY);
+  
+   //typedef u64 (*btf_bpf_strncmp)(const char *, u32, const char *);
+   int res = bpf_strncmp(data.command,8,"ssh");
+   if (!res) {
+	   //bpf_printk("Command: %s , %s Res: %d",str1, data.command, res);
+	   bpf_perf_event_output(ctx, &output, BPF_F_CURRENT_CPU, &data, sizeof(data));
+   }
+	
+   return 0;
+}
+
 SEC("tp/syscalls/sys_enter_getpeername")
 int tp_sys_enter_getpeername(struct trace_event_raw_sys_enter *ctx)
 {
-   return probe_entry(ctx, (struct sockaddr_in *)ctx->args[1]);
+   return probe_entry_getpeername(ctx, (struct sockaddr_in *)ctx->args[1]);
 }
 
 SEC("tp/syscalls/sys_exit_getpeername")
 int tp_sys_exit_getpeername(struct trace_event_raw_sys_exit *ctx)
 {
-   return probe_return(ctx, (int)ctx->ret);
+   return probe_return_getpeername(ctx, (int)ctx->ret);
 }
 
+
+SEC("tp/syscalls/sys_enter_getsockname")
+int tp_sys_enter_getsockname(struct trace_event_raw_sys_enter *ctx)
+{
+   return probe_entry_getsockname(ctx, (struct sockaddr_in *)ctx->args[1]);
+}
+
+SEC("tp/syscalls/sys_exit_getsockname")
+int tp_sys_exit_getsockname(struct trace_event_raw_sys_exit *ctx)
+{
+   return probe_return_getsockname(ctx, (int)ctx->ret);
+}
 
 const volatile bool filter_cg = false;
 const volatile bool ignore_failed = true;
@@ -180,63 +253,44 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
 SEC("tracepoint/syscalls/sys_exit_execve")
 int tracepoint__syscalls__sys_exit_execve(struct trace_event_raw_sys_exit* ctx)
 {
+	
 	__u64 id = bpf_get_current_pid_tgid();
-   pid_t pid = id >> 32;
-   pid_t tid = (__u32)id;
+	pid_t pid = id >> 32;
+	pid_t tid = (__u32)id;
+	
 	int ret;
-  	struct task_struct *task;
-   //struct sockaddr_in **addrpp;
-   //struct sockaddr_in *addr;
-   pid_t ppid;
-	//struct event *event;
-   struct data_t data = {}; //copy
-   if (filter_cg && !bpf_current_task_under_cgroup(&cgroup_map, 0))
+	struct task_struct *task;
+	pid_t ppid;
+
+	struct data_t data = {}; //copy
+	if (filter_cg && !bpf_current_task_under_cgroup(&cgroup_map, 0))
 		return 0;
 
 	u32 uid = (u32)bpf_get_current_uid_gid();
 
 	if (valid_uid(targ_uid) && targ_uid != uid)
 		return 0;
-   
-	//event = bpf_map_lookup_elem(&execs, &pid);
-	//if (!event)
-	//	return 0;
+
+
 	ret = ctx->ret;
 	if (ignore_failed && ret < 0)
 		goto cleanup;
-
-	//event->retval = ret;
-//IP address
-  
+   
    task = (struct task_struct*)bpf_get_current_task();
    ppid = (pid_t)BPF_CORE_READ(task, real_parent, tgid);
-   //addrpp = bpf_map_lookup_elem(&values, &ppid);
-
-   //if (!addrpp)
-      //return 0;
-   //e.pid = event->pid;
-
-   //e.ppid = event->ppid;
-   //e.uid = event->uid;
-   //e.retval = event->retval;
-   //e.args_count = event->args_count;
-   //e.args_size = event->args_size;
-   //bpf_probe_read_user(&e.comm,sizeof(e.comm), event->comm);
-   //bpf_probe_read_user(&e.args,sizeof(e.args), event->args);
-   //addr = *addrpp;
-
+   //make data_t event
    data.pid = tid;
    data.uid = uid;
    data.ret = ret;
    data.ppid = ppid;
+   data.type_id = 3;
    bpf_get_current_comm(&data.command, sizeof(data.command));
-   //int err = bpf_probe_read_kernel(&data.addr, sizeof(data.addr), addr);
-   //bpf_printk("PPID execv map: %d PPID: %d Error: %d", addr, data.ppid, err);
-
-
+   
 	//size_t len = EVENT_SIZE(e);
 	//if (len <= sizeof(e))
-	//bpf_perf_event_output(ctx, &output, BPF_F_CURRENT_CPU, &data, sizeof(data));
+	bpf_perf_event_output(ctx, &output, BPF_F_CURRENT_CPU, &data, sizeof(data));
+
+
 
 cleanup:
 	bpf_map_delete_elem(&execs, &pid);

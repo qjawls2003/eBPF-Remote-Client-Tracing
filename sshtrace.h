@@ -19,7 +19,7 @@ struct data_t {
    char command[TASK_COMM_LEN];
    int ret;
    struct sockaddr_in addr;
-   //int ip_addr;
+   int type_id; //0:others 1:getpeername 2:getsockname 3:execve
 };
 
 struct event {
@@ -31,7 +31,6 @@ struct event {
 	unsigned int args_size;
 	char comm[TASK_COMM_LEN];
 	char args[FULL_MAX_ARGS_ARR];
-   struct sockaddr_in addr;
 };
 
 #endif /* __EXECSNOOP_H */

@@ -6,6 +6,8 @@
 #include <arpa/inet.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
+#include <sys/types.h>
+#include <pwd.h>
 #include "sshtrace.h"
 #include "sshtrace.skel.h"
 
@@ -18,35 +20,67 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 	return vfprintf(stderr, format, args);
 }
 
+const char* getUser(uid_t uid) {
+	struct passwd *pws;
+	pws = getpwuid(uid);
+	return pws->pw_name;
+}
+
 void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz)
 { 
 	struct data_t *m = data;
-	//char str1[] = "sshd";
-	//char str2[] = "ls";
-	//struct sockaddr temp = *m->client_ip;
-	//printf("Here \n");
-
     struct sockaddr_in ip;
 	char ipAddress[INET_ADDRSTRLEN] = {0};
     uint16_t port;
 	int err;
-	int val = bpf_obj_get("/sys/fs/bpf/raw_sockaddr"); //BASH PID -> IP
-    if (val <= 0) {
+	int map_pid = bpf_obj_get("/sys/fs/bpf/raw_sockaddr"); //BASH PID -> IP #Map1
+    if (map_pid <= 0) {
         printf("No FD\n");
     } else {
-        err = bpf_map_lookup_elem(val, &m->ppid, &ip);
+        err = bpf_map_lookup_elem(map_pid, &m->ppid, &ip);
     }
+	const char* user = getUser(m->uid);
 
-	if (!err){
-	//inet_ntop(AF_INET, &(ip.sin_addr), ipAddress, INET_ADDRSTRLEN);
-	inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
-    port = htons(m->addr.sin_port);
+	if (!err && (m->type_id==3)){
+		inet_ntop(AF_INET, &(ip.sin_addr), ipAddress, INET_ADDRSTRLEN);
+		port = htons(ip.sin_port);
 
-    printf("%-6d %-6d %-16s %16s %d\n", m->pid, m->ppid, m->command, ipAddress, port);
-	} else {
-	inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
-    port = htons(m->addr.sin_port);
-    printf("%-6d %-6d %-16s %16s %d\n", m->pid, m->ppid, m->command, ipAddress, port);
+		//inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
+		//port = htons(m->addr.sin_port);
+		printf("%-6d %-6d %-6d %-16s %-16s %16s %d\n", m->pid, m->ppid, m->uid, user, m->command, ipAddress, port);
+
+	} else if (!err && m->type_id==1) { //getpeername
+		inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
+		port = htons(m->addr.sin_port);
+		if (!strncmp(ipAddress,"127.0.0.1",INET_ADDRSTRLEN)) {
+			int err, err2;
+			struct sockaddr_in ip2;
+			int map_port = bpf_obj_get("/sys/fs/bpf/raw_port"); //BASH port -> IP #Map2
+			if (map_port <= 0) {
+				printf("No FD\n");
+			} else {
+				err = bpf_map_lookup_elem(map_port, &port, &ip2);//look up sockaddr_in from Map2 using port
+				err2 = bpf_map_update_elem(map_pid, &m->pid, &ip2, BPF_ANY); //update Map1 with current PID -> lookedup sockaddr_in
+
+//int bpf_map_update_elem(int fd, const void *key, const void *value, __u64 flags);
+			}
+		}
+		//printf("%-6d %-6d %-16s %16s %d\n", m->pid, m->ppid, m->command, ipAddress, port);
+	} else if (!err && m->type_id==2) { //getsockname
+		inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
+		port = htons(m->addr.sin_port);
+		if (!strncmp(ipAddress,"127.0.0.1",INET_ADDRSTRLEN)) {
+			int err;
+			int map_port = bpf_obj_get("/sys/fs/bpf/raw_port"); //BASH port -> IP #Map2
+			if (map_port <= 0) {
+				printf("No FD\n");
+			} else {
+				err = bpf_map_update_elem(map_port, &port, &ip, BPF_ANY);  //update Map2 with Port -> ip (sockaddr_in)
+			}
+			//ip is already looked up. 
+		}
+	} else { //process tree trace back to original bash/user
+		printf("%-6d %-6d %-6d %-16s %16s %d\n", m->pid, m->ppid, m->uid, m->command, "localhost", 0);
 	}
 }
 
@@ -58,7 +92,7 @@ void lost_event(void *ctx, int cpu, long long unsigned int data_sz)
 int main()
 {
     printf("%s", "Starting...\n");
-	printf("%-6s %-6s %-16s %16s\n", "PID", "PPID", "Command", "IP Address");
+	printf("%-6s %-6s %-6s %-16s %-16s %16s\n", "PID", "PPID", "UID", "User", "Command", "IP Address");
 
 	struct sshtrace_bpf *skel;
 	// struct bpf_object_open_opts *o;
