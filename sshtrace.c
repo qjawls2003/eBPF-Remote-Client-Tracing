@@ -26,63 +26,86 @@ const char* getUser(uid_t uid) {
 	return pws->pw_name;
 }
 
+
 void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz)
 { 
 	struct data_t *m = data;
     struct sockaddr_in ip;
+	uid_t org_user;
 	char ipAddress[INET_ADDRSTRLEN] = {0};
     uint16_t port;
 	int err;
+	int err2;
 	int map_pid = bpf_obj_get("/sys/fs/bpf/raw_sockaddr"); //BASH PID -> IP #Map1
     if (map_pid <= 0) {
         printf("No FD\n");
     } else {
         err = bpf_map_lookup_elem(map_pid, &m->ppid, &ip);
     }
-	const char* user = getUser(m->uid);
-
+	int map_user = bpf_obj_get("/sys/fs/bpf/raw_user"); //BASH PID -> user #Map3
+    if (map_user <= 0) {
+        printf("No FD\n");
+    } else {
+        err2 = bpf_map_lookup_elem(map_user, &m->ppid, &org_user);
+    }
+	
+	const char* user_c = getUser(m->uid);
 	if (!err && (m->type_id==3)){
 		inet_ntop(AF_INET, &(ip.sin_addr), ipAddress, INET_ADDRSTRLEN);
 		port = htons(ip.sin_port);
-
 		//inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
 		//port = htons(m->addr.sin_port);
-		printf("%-6d %-6d %-6d %-16s %-16s %16s %d\n", m->pid, m->ppid, m->uid, user, m->command, ipAddress, port);
+		//printf("%-6d %-6d %-6d %-16s %-16s %-16s %16s %d\n", m->pid, m->ppid, m->uid, user_c, getUser(org_user), m->command, ipAddress, port);
+		
+		printf("%-6d %-6d %-6d %-16s %-16d %-16s %16s %d\n", m->pid, m->ppid, m->uid, user_c, org_user, m->command, ipAddress, port);
+
 
 	} else if (m->type_id==1) { //getpeername
 		inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
 		port = htons(m->addr.sin_port);
 		if (!strncmp(ipAddress,"127.0.0.1",INET_ADDRSTRLEN)) {
-			int err, err2;
 			struct sockaddr_in ip2;
+			uid_t user_o;
 			int map_port = bpf_obj_get("/sys/fs/bpf/raw_port"); //BASH port -> IP #Map2
-			if (map_port <= 0) {
+			int map_userport = bpf_obj_get("/sys/fs/bpf/raw_userport"); //BASH port -> IP #Map2
+			if (map_port <= 0 && map_userport <= 0) {
 				printf("No FD\n");
 			} else {
-				err = bpf_map_lookup_elem(map_port, &port, &ip2);//look up sockaddr_in from Map2 using port
-				err2 = bpf_map_update_elem(map_pid, &m->pid, &ip2, BPF_ANY); //update Map1 with current PID -> lookedup sockaddr_in
-
-//int bpf_map_update_elem(int fd, const void *key, const void *value, __u64 flags);
+				bpf_map_lookup_elem(map_port, &port, &ip2);//look up sockaddr_in from Map2 using port
+				bpf_map_update_elem(map_pid, &m->pid, &ip2, BPF_ANY); //update Map1 with current PID -> lookedup sockaddr_in
+				
+				bpf_map_lookup_elem(map_userport, &port, &user_o);//
+				bpf_map_update_elem(map_user, &m->pid, &user_o, BPF_ANY); 
 			}
+			
+			close(map_userport);
+			close(map_port);
 		}
-		printf("%-6d %-6d %-6d %-16s %-16s %16s %d\n", m->pid, m->ppid, m->uid,user, m->command, ipAddress, port);
+		//printf("%-6d %-6d %-6d %-16s %-16s %16s %d %d\n", m->pid, m->ppid, m->uid,user, m->command, ipAddress, port,0);
 	} else if (m->type_id==2) { //getsockname
 		inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
 		port = htons(m->addr.sin_port);
 		if (!strncmp(ipAddress,"127.0.0.1",INET_ADDRSTRLEN)) {
-			int err;
 			int map_port = bpf_obj_get("/sys/fs/bpf/raw_port"); //BASH port -> IP #Map2
-			if (map_port <= 0) {
+			int map_userport = bpf_obj_get("/sys/fs/bpf/raw_userport"); //BASH port -> IP #Map2
+
+			if (map_port <= 0 && map_userport <= 0) {
 				printf("No FD\n");
 			} else {
-				err = bpf_map_update_elem(map_port, &port, &ip, BPF_ANY);  //update Map2 with Port -> ip (sockaddr_in)
+				bpf_map_update_elem(map_port, &port, &ip, BPF_ANY);  //update Map2 with Port -> ip (sockaddr_in)
+				bpf_map_update_elem(map_userport, &port, &org_user, BPF_ANY);
 			}
+			
+			close(map_userport);
+			close(map_port);
 			//ip is already looked up. 
 		}
-		printf("%-6d %-6d %-6d %-16s %-16s %16s %d\n", m->pid, m->ppid, m->uid,user, m->command, ipAddress, port);
+		//printf("%-6d %-6d %-6d %-16s %-16s %16s %d %d\n", m->pid, m->ppid, m->uid,user, m->command, ipAddress, port, 1);
 	} else { //process tree trace back to original bash/user
-		printf("%-6d %-6d %-6d %-16s %-16s %16s %d\n", m->pid, m->ppid, m->uid, user, m->command, "localhost", 0);
+		//printf("%-6d %-6d %-6d %-16s %-16s %16s %d\n", m->pid, m->ppid, m->uid, user, m->command, "localhost", 0);
 	}
+	close(map_pid);
+	close(map_user);
 }
 
 void lost_event(void *ctx, int cpu, long long unsigned int data_sz)
@@ -93,7 +116,7 @@ void lost_event(void *ctx, int cpu, long long unsigned int data_sz)
 int main()
 {
     printf("%s", "Starting...\n");
-	printf("%-6s %-6s %-6s %-16s %-16s %16s\n", "PID", "PPID", "UID", "User", "Command", "IP Address");
+	printf("%-6s %-6s %-6s %-16s %-16s %-16s %16s\n", "PID", "PPID", "UID", "Current User", "Origin UID", "Command", "IP Address");
 
 	struct sshtrace_bpf *skel;
 	// struct bpf_object_open_opts *o;

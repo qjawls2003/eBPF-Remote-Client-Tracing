@@ -6,8 +6,6 @@
 #include <string.h>
 #include "sshtrace.h"
 
-const char tp_btf_exec_msg[19] = "tp_sys_enter_accept";
-
 struct {
     __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
     __uint(key_size, sizeof(u32));
@@ -45,6 +43,22 @@ struct {
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
 }  raw_port SEC(".maps");
 
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 10240);
+    __type(key, pid_t);
+    __type(value, uid_t);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+}  raw_user SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 10240);
+    __type(key, uint16_t);
+    __type(value, uid_t);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+}  raw_userport SEC(".maps");
+
 
 struct {
 	__uint(type, BPF_MAP_TYPE_CGROUP_ARRAY);
@@ -52,6 +66,20 @@ struct {
 	__type(value, u32);
 	__uint(max_entries, 1);
 } cgroup_map SEC(".maps");
+
+static int ip_helper(struct sockaddr* ip) {
+	switch (ip->sa_family) {
+		case 2: { //AF_INET
+			return 1;
+		}
+		case 10: { //AF_INET6
+			return 0;
+		}
+		default:
+			return -1;
+	}
+}
+
 
 static int probe_entry_getpeername(void *ctx, struct sockaddr_in *addr)
 {
@@ -69,27 +97,26 @@ static int probe_return_getpeername(void *ctx, int ret)
    pid_t pid = id >> 32;
    pid_t tid = (__u32)id;
    uid_t uid = bpf_get_current_uid_gid() & 0xFFFFFFFF;
-   struct sockaddr_in **addrpp;
-   struct sockaddr_in *addr;
-   struct data_t data = {};
-
-   addrpp = bpf_map_lookup_elem(&values, &tid);
-   if (!addrpp)
+	struct sockaddr_in **addrpp;
+	struct sockaddr_in *addr;
+	struct data_t data = {};   
+	addrpp = bpf_map_lookup_elem(&values, &tid);
+	if (!addrpp)
       return 0;
-   
-   addr = *addrpp;
-   //only need for conditional
+	
+	addr = *addrpp;
    data.pid = pid;
    data.uid = uid;
    data.ret = ret;
    bpf_get_current_comm(&data.command, sizeof(data.command));
    data.type_id = 1;
    int err = bpf_probe_read_user(&data.addr, sizeof(data.addr), addr);
-   bpf_map_update_elem(&raw_sockaddr, &pid, &data.addr, BPF_ANY);
-  
-   //typedef u64 (*btf_bpf_strncmp)(const char *, u32, const char *);
+   //bpf_map_update_elem(&raw_sockaddr, &pid, &data.addr, BPF_ANY); 
+
    int res = bpf_strncmp(data.command,8,"sshd");
    if (!res) {
+	   bpf_map_update_elem(&raw_sockaddr, &pid, &data.addr, BPF_ANY);
+   	   bpf_map_update_elem(&raw_user, &pid, &data.uid, BPF_ANY);
 	   //bpf_printk("Command: %s , %s Res: %d",str1, data.command, res);
 	   bpf_perf_event_output(ctx, &output, BPF_F_CURRENT_CPU, &data, sizeof(data));
    }
@@ -101,7 +128,6 @@ static int probe_return_getpeername(void *ctx, int ret)
 static int probe_entry_getsockname(void *ctx, struct sockaddr_in *addr)
 {
    __u64 id = bpf_get_current_pid_tgid();
-   //__u32 pid = id >> 32;
    pid_t tid = (__u32)id;
 
    bpf_map_update_elem(&values, &tid, &addr, BPF_ANY);
@@ -123,16 +149,12 @@ static int probe_return_getsockname(void *ctx, int ret)
       return 0;
    
    addr = *addrpp;
-   //only need for conditional
    data.pid = pid;
    data.uid = uid;
    data.ret = ret;
    bpf_get_current_comm(&data.command, sizeof(data.command));
    data.type_id = 2;
    int err = bpf_probe_read_user(&data.addr, sizeof(data.addr), addr);
-   //bpf_map_update_elem(&raw_sockaddr, &pid, &data.addr, BPF_ANY);
-  
-   //typedef u64 (*btf_bpf_strncmp)(const char *, u32, const char *);
    int res = bpf_strncmp(data.command,8,"ssh");
    if (!res) {
 	   //bpf_printk("Command: %s , %s Res: %d",str1, data.command, res);
@@ -145,7 +167,7 @@ static int probe_return_getsockname(void *ctx, int ret)
 SEC("tp/syscalls/sys_enter_getpeername")
 int tp_sys_enter_getpeername(struct trace_event_raw_sys_enter *ctx)
 {
-   return probe_entry_getpeername(ctx, (struct sockaddr_in *)ctx->args[1]);
+	return probe_entry_getpeername(ctx, (struct sockaddr_in *)ctx->args[1]);
 }
 
 SEC("tp/syscalls/sys_exit_getpeername")
@@ -158,7 +180,7 @@ int tp_sys_exit_getpeername(struct trace_event_raw_sys_exit *ctx)
 SEC("tp/syscalls/sys_enter_getsockname")
 int tp_sys_enter_getsockname(struct trace_event_raw_sys_enter *ctx)
 {
-   return probe_entry_getsockname(ctx, (struct sockaddr_in *)ctx->args[1]);
+	return probe_entry_getsockname(ctx, (struct sockaddr_in *)ctx->args[1]);
 }
 
 SEC("tp/syscalls/sys_exit_getsockname")
