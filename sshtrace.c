@@ -1,3 +1,4 @@
+#define _POSIX_SOURCE
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
@@ -21,9 +22,30 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 }
 
 const char* getUser(uid_t uid) {
-	struct passwd *pws;
-	pws = getpwuid(uid);
-	return pws->pw_name;
+	struct passwd pwd;
+	struct passwd *result;
+	char *buf;
+	long bufsize;
+	int s;
+	bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
+	if (bufsize == -1)          /* Value was indeterminate */
+		bufsize = 16384;        /* Should be more than enough */
+	buf = malloc(bufsize);
+	if (buf == NULL) {
+		perror("malloc");
+		exit(EXIT_FAILURE);
+	}
+	 s = getpwuid_r(uid, &pwd, buf, bufsize, &result);
+	if (result == NULL) {
+		if (s == 0)
+			printf("Not found\n");
+		else {
+			errno = s;
+			perror("getpwnam_r");
+		}
+		exit(EXIT_FAILURE);
+	}
+	return pwd.pw_name;
 }
 
 
@@ -53,11 +75,11 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz)
 	if (!err && (m->type_id==3)){
 		inet_ntop(AF_INET, &(ip.sin_addr), ipAddress, INET_ADDRSTRLEN);
 		port = htons(ip.sin_port);
+		const char * user_org = getUser(org_user);
 		//inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
 		//port = htons(m->addr.sin_port);
-		//printf("%-6d %-6d %-6d %-16s %-16s %-16s %16s %d\n", m->pid, m->ppid, m->uid, user_c, getUser(org_user), m->command, ipAddress, port);
-		
-		printf("%-6d %-6d %-6d %-16s %-16d %-16s %16s %d\n", m->pid, m->ppid, m->uid, user_c, org_user, m->command, ipAddress, port);
+		printf("%-6d %-6d %-6d %-16s %-16s %-16s %16s %d\n", m->pid, m->ppid, m->uid, user_c, user_org, m->command, ipAddress, port);
+		//printf("%-6d %-6d %-6d %-16s %-16d %-16s %16s %d\n", m->pid, m->ppid, m->uid, user_c, org_user, m->command, ipAddress, port);
 
 
 	} else if (m->type_id==1) { //getpeername
@@ -116,7 +138,7 @@ void lost_event(void *ctx, int cpu, long long unsigned int data_sz)
 int main()
 {
     printf("%s", "Starting...\n");
-	printf("%-6s %-6s %-6s %-16s %-16s %-16s %16s\n", "PID", "PPID", "UID", "Current User", "Origin UID", "Command", "IP Address");
+	printf("%-6s %-6s %-6s %-16s %-16s %-16s %16s\n", "PID", "PPID", "UID", "Current User", "Origin UID", "Command", "Original IP Address Port");
 
 	struct sshtrace_bpf *skel;
 	// struct bpf_object_open_opts *o;
