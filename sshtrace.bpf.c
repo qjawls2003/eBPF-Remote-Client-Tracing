@@ -228,7 +228,7 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
 	event = bpf_map_lookup_elem(&execs, &pid);
 	if (!event)
 		return 0;
-
+	
 	event->pid = tgid;
 	event->uid = uid;
 	task = (struct task_struct*)bpf_get_current_task();
@@ -269,6 +269,8 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
 
 	/* pointer to max_args+1 isn't null, asume we have more arguments */
 	event->args_count++;
+	
+	
 	return 0;
 }
 
@@ -310,6 +312,8 @@ int tracepoint__syscalls__sys_exit_execve(struct trace_event_raw_sys_exit* ctx)
    
 	//size_t len = EVENT_SIZE(e);
 	//if (len <= sizeof(e))
+   bpf_printk("Sending event...");
+
 	bpf_perf_event_output(ctx, &output, BPF_F_CURRENT_CPU, &data, sizeof(data));
 
 

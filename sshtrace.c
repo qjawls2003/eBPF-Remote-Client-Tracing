@@ -11,6 +11,16 @@
 #include <pwd.h>
 #include "sshtrace.h"
 #include "sshtrace.skel.h"
+#include "logger.h"
+#include <stdlib.h>
+#include <time.h>
+
+void logger(const char* tag, const char* message) {
+   time_t now;
+   time(&now);
+   printf("%s [%s]: %s\n", ctime(&now), tag, message);
+}
+
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args)
 {
@@ -41,16 +51,30 @@ const char* getUser(uid_t uid) {
 			printf("Not found\n");
 		else {
 			errno = s;
-			perror("getpwnam_r");
+			perror("getpwuid_r");
 		}
 		exit(EXIT_FAILURE);
 	}
+	free(buf);
 	return pwd.pw_name;
 }
 
+pid_t getPPID(pid_t pid) {
+	printf("getPPID Start");
+	char file[1000];
+	sprintf(file, "/proc/%d/stat",pid);
+	FILE *f = fopen(file, "r");
+    pid_t ppid;
+    fscanf(f, "%*d %*s %*c %d", &ppid); //skipping first 3 args
+    //printf("parent pid = %d\n", ppid);
+    fclose(f);
+	printf("getPPID End");
+	return ppid;
+}
 
 void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz)
-{ 
+{ 	
+	printf("handle_event Start");
 	struct data_t *m = data;
     struct sockaddr_in ip;
 	uid_t org_user;
@@ -62,23 +86,55 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz)
     if (map_pid <= 0) {
         printf("No FD\n");
     } else {
+		pid_t ppid = m->ppid;
+		
         err = bpf_map_lookup_elem(map_pid, &m->ppid, &ip);
+		while (ppid > 0 && err) {
+			pid_t next_ppid = getPPID(ppid);
+			ppid = next_ppid;
+	        err = bpf_map_lookup_elem(map_pid, &ppid, &ip);
+		}			
+		printf("PPID: %d \n",ppid);
     }
+	if (!err) {
+		logger("<info>","IP Looked Up");
+	} else {
+		logger("<info>","IP Not Found");
+	}
 	int map_user = bpf_obj_get("/sys/fs/bpf/raw_user"); //BASH PID -> user #Map3
     if (map_user <= 0) {
         printf("No FD\n");
     } else {
-        err2 = bpf_map_lookup_elem(map_user, &m->ppid, &org_user);
+			err2 = bpf_map_lookup_elem(map_user, &m->ppid, &org_user);
     }
+	if (!err2) {
+		logger("<info>","User Looked Up");
+	} else {
+		logger("<info>","User Not Found");
+	}
 	
-	const char* user_c = getUser(m->uid);
+	
 	if (!err && (m->type_id==3)){
+		logger("<info>","1 Not Found");
 		inet_ntop(AF_INET, &(ip.sin_addr), ipAddress, INET_ADDRSTRLEN);
+		logger("<info>","2 Not Found");
 		port = htons(ip.sin_port);
-		const char * user_org = getUser(org_user);
+		logger("<info>","3 Not Found");
+		const char* user_c = getUser(m->uid);
+		logger("<info>","4 Not Found");
+		printf("%d",org_user);
+		if (!err2) {
+			const char * user_org = getUser(org_user);
+		} else {
+			const char* org_user = user_c;
+		}
+
+		logger("<info>","5 Not Found");
 		//inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
 		//port = htons(m->addr.sin_port);
-		printf("%-6d %-6d %-6d %-16s %-16s %-16s %16s %d\n", m->pid, m->ppid, m->uid, user_c, user_org, m->command, ipAddress, port);
+		
+	
+		//printf("%-6d %-6d %-6d %-16s %-16s %-16s %16s %d\n", m->pid, m->ppid, m->uid, user_c, user_org, m->command, ipAddress, port);
 		//printf("%-6d %-6d %-6d %-16s %-16d %-16s %16s %d\n", m->pid, m->ppid, m->uid, user_c, org_user, m->command, ipAddress, port);
 
 
@@ -124,10 +180,18 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz)
 		}
 		//printf("%-6d %-6d %-6d %-16s %-16s %16s %d %d\n", m->pid, m->ppid, m->uid,user, m->command, ipAddress, port, 1);
 	} else { //process tree trace back to original bash/user
-		//printf("%-6d %-6d %-6d %-16s %-16s %16s %d\n", m->pid, m->ppid, m->uid, user, m->command, "localhost", 0);
+		
+		
+		//printf("%-6d %-6d %-6d %-16s %-16s %16s %d\n", m->pid, m->ppid, m->uid, user_c, m->command, "localhost", 0);
 	}
+	
+	logger("<info>","6 Not Found");
 	close(map_pid);
+	logger("<info>","7 Not Found");
 	close(map_user);
+	logger("<info>","8 Not Found");
+	printf("%d\n",m->pid);
+	
 }
 
 void lost_event(void *ctx, int cpu, long long unsigned int data_sz)
@@ -138,7 +202,9 @@ void lost_event(void *ctx, int cpu, long long unsigned int data_sz)
 int main()
 {
     printf("%s", "Starting...\n");
-	printf("%-6s %-6s %-6s %-16s %-16s %-16s %16s\n", "PID", "PPID", "UID", "Current User", "Origin UID", "Command", "Original IP Address Port");
+    printf("%s", "Showing all proc created by ssh user...\n");
+
+	printf("%-6s %-6s %-6s %-16s %-16s %-16s %16s %s\n", "PID", "PPID", "UID", "Current User", "Origin User", "Command", "Origin IP Address", "Port");
 
 	struct sshtrace_bpf *skel;
 	// struct bpf_object_open_opts *o;
@@ -193,10 +259,8 @@ int main()
 	}
 
 	while (true) {
-		
 		err = perf_buffer__poll(pb, 100 /* timeout, ms */);
 		// Ctrl-C gives -EINTR
-		
 		if (err == -EINTR) {
 			err = 0;
 			break;
@@ -206,7 +270,6 @@ int main()
 			break;
 		}
 	}
-
 	perf_buffer__free(pb);
 	sshtrace_bpf__destroy(skel);
 	return -err;
