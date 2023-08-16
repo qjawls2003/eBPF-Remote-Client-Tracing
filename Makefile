@@ -5,6 +5,7 @@ BPF_OBJ = ${TARGET:=.bpf.o}
 
 USER_C = ${TARGET:=.c}
 USER_SKEL = ${TARGET:=.skel.h}
+LOG_C = log.c/src/log.c
 
 COMMON_H = ${TARGET:=.h}
 
@@ -12,7 +13,7 @@ app: $(TARGET) $(BPF_OBJ)
 .PHONY: app
 
 $(TARGET): $(USER_C) $(USER_SKEL) $(COMMON_H)
-	gcc -Wall -o $(TARGET) $(USER_C) -L../libbpf/src -l:libbpf.a -lelf -lz
+	gcc -Wall -o $(TARGET) $(USER_C) $(LOG_C) -L../libbpf/src -l:libbpf.a -lelf -lz
 
 %.bpf.o: %.bpf.c vmlinux.h $(COMMON_H)
 	clang \
