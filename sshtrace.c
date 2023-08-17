@@ -249,16 +249,17 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     // printf("%-6d %-6d %-6d %-16s %-16s %-16s %16s %d\n", m->pid, m->ppid,
     // m->uid, user_c, user_org, m->command, ipAddress, port);
     //uid_t userAncestor = getUID(org_user);
-	char* user_c = getUser(m->uid);
+	char* currentUser = getUser(m->uid);
+	char * originalUser;
 	if (!userErr) {
-			user_org = getUser(org_user);
+			originalUser = getUser(org_user);
 		} else {
-			user_org = user_c;
+			originalUser = currentUser;
 		}
 	
 	printf("%d %d \n",m->uid,org_user);
-    printf("%-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d %d\n", m->pid, m->ppid,
-           m->uid, user_c, user_org, m->command, ipAddress, port, sshdPID);
+    printf("%-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d\n", m->pid, m->ppid,
+           m->uid, currentUser, originalUser, m->command, ipAddress, port);
 
   } else if (m->type_id == GETPEERNAME) {
     log_trace("Converting sockaddr_in to presentable IP address");
