@@ -1,20 +1,22 @@
 #define _POSIX_SOURCE
-#include <stdio.h>
-#include <unistd.h>
-#include <errno.h>
-#include <string.h>
-#include <netinet/in.h>
+
 #include <arpa/inet.h>
-#include <bpf/libbpf.h>
 #include <bpf/bpf.h>
-#include <sys/types.h>
+#include <bpf/libbpf.h>
+#include <errno.h>
+#include <netinet/in.h>
 #include <pwd.h>
-#include <stdlib.h>
-#include <time.h>
 #include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
+
+#include "log.c/src/log.h"
 #include "sshtrace.h"
 #include "sshtrace.skel.h"
-#include "log.c/src/log.h"
 
 #define GETPEERNAME 1
 #define GETSOCKNAME 2
@@ -179,19 +181,22 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
       free(comm);
       log_trace("Looking up the parent process of %d", ppid);
       pid_t ancestorPID = getPPID(ppid);
-      log_trace("Found parent process of %d, ancestor is %d", ppid, ancestorPID);
+      log_trace("Found parent process of %d, ancestor is %d", ppid,
+                ancestorPID);
       log_trace("Looking up the command used to invoke PID %d", ancestorPID);
       char *comm = getCommand(ancestorPID);
       log_trace("Found invoking command of %d, %s", ancestorPID, comm);
       if (strncmp(comm, "(sshd)", 6) == 0) {
-        log_trace("Found an sshd task in the process tree with PID %d", ancestorPID);
+        log_trace("Found an sshd task in the process tree with PID %d",
+                  ancestorPID);
         sshdFound = true;
         // We want the process just before sshd, i.e. ppid
         sshdPID = ppid;
         log_trace("Looking up PID %d in the sockaddr BPF map", sshdPID);
         sockaddrErr = bpf_map_lookup_elem(sockaddrMap, &sshdPID, &ip);
         if (sockaddrErr != 0) {
-          log_trace("Couldn't find a corresponding sockaddr_in for the sshd process");
+          log_trace(
+              "Couldn't find a corresponding sockaddr_in for the sshd process");
         } else {
           log_trace("Found a corresponding sockaddr_in for the sshd process");
           break;
@@ -202,6 +207,8 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     log_trace("Reporting %d as the originating PID", sshdPID);
     free(comm);
     if (sshdFound == false) {
+      close(sockaddrMap);
+      close(userMap);
       return;
     }
 
@@ -212,10 +219,10 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     port = htons(ip.sin_port);
     log_trace("Converting port succeeded (%d)", port);
 
-	  char* currentUser = getUser(m->uid);
+    char *currentUser = getUser(m->uid);
     uid_t originalUID = getUID(sshdPID);
-    char* originalUser = getUser(originalUID);
-	
+    char *originalUser = getUser(originalUID);
+
     printf("%-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d\n", m->pid, m->ppid,
            m->uid, currentUser, originalUser, m->command, ipAddress, port);
 
@@ -265,14 +272,15 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
         log_trace("Updating the user corresponding to PID %d in the user map",
                   m->pid);
         bpf_map_update_elem(userMap, &m->pid, &originalUser, BPF_ANY);
-        //user = &originalUser;
-        close(portMap);
-        close(userportMap);
+        // user = &originalUser;
       }
+      close(portMap);
+      close(userportMap);
     }
-    //uid_t userAncestor = getUID(org_user);
-    //printf("%-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d\n", m->pid, m->ppid,
-           //m->uid, getUser(m->uid), getUser(userAncestor), m->command, ipAddress, port);
+    // uid_t userAncestor = getUID(org_user);
+    // printf("%-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d\n", m->pid, m->ppid,
+    // m->uid, getUser(m->uid), getUser(userAncestor), m->command, ipAddress,
+    // port);
   } else if (m->type_id == GETSOCKNAME) {
     inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
     port = htons(m->addr.sin_port);
@@ -288,7 +296,8 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
         bpf_map_update_elem(
             map_port, &port, &ip,
             BPF_ANY); // update Map2 with Port -> ip (sockaddr_in)
-        bpf_map_update_elem(userMapport, &port, &org_user, BPF_ANY); // update Map3 with Port -> org_user
+        bpf_map_update_elem(userMapport, &port, &org_user,
+                            BPF_ANY); // update Map3 with Port -> org_user
       }
 
       close(userMapport);
