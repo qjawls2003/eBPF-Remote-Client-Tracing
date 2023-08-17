@@ -15,7 +15,6 @@
 #include "sshtrace.h"
 #include "sshtrace.skel.h"
 #include "log.c/src/log.h"
-#include "logger.h"
 
 #define GETPEERNAME 1
 #define GETSOCKNAME 2
@@ -28,12 +27,6 @@ void intHandler(int signal) {
   intSignal = 1;
 }
 
-void logger(const char *tag, const char *message) {
-  time_t now;
-  time(&now);
-  printf("%s [%s]: %s\n", ctime(&now), tag, message);
-}
-
 static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
                            va_list args) {
 
@@ -44,47 +37,23 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 }
 
 char *getUser(uid_t uid) {
-  log_trace("Entering getUser()");
-  if (uid == 0) {
-    log_trace("UID was 0, returning root");
-    char root[4] = "root";
-    char *ptr = root;
-    return ptr;
-  }
-  log_trace("Setting buffer size according to SYSCONF");
+  log_trace("Entering getUser(%d)", uid);
   long bufferSize = sysconf(_SC_GETPW_R_SIZE_MAX);
-  if (bufferSize == -1) //Value was indeterminate 
-    bufferSize = 16384; // Should be more than enough 
-   /*
-   log_trace("Allocating memory for buffer: %d", bufferSize);
-   char *buf = malloc(bufferSize);
-   if (buf == NULL) {
-  	log_error("Failed to allocate memory for buffer: %d", bufferSize);
-  	exit(EXIT_FAILURE);
-   }
-   */
-  
-  struct passwd pwd;
-  struct passwd *result;
-  char buf[bufferSize];
-  log_trace("Calling getpwuid_r() to retrieve the readable username for %d", uid);
-  int s = getpwuid_r(uid, &pwd, buf, bufferSize, &result);
-  if (result == NULL) {
-    if (s == 0) {
-      log_info("Unable to find username for UID %d", uid);
-    } else {
-		errno = s;
-      log_error("Encountered an error while calling getpwuid_r()");
-    }
-    exit(EXIT_FAILURE);
+  if (bufferSize == -1) {
+    bufferSize = 16384;
   }
-   //log_trace("Freeing the memory allocated for buffer");
-   //free(buf);
-  log_debug("Exiting getUser() with User: %s", pwd.pw_name);
-  return pwd.pw_name;
+  char *user = (char *)malloc(bufferSize);
+  struct passwd *pwd = getpwuid(uid);
+  if (pwd == NULL) {
+    log_info("Unable to find username for UID %d", uid);
+    char tmp[3] = "n/a";
+    strcpy(user, tmp);
+  } else {
+    strcpy(user, pwd->pw_name);
+  }
+  log_trace("Exiting getUser(%d) with User: %s", uid, user);
+  return user;
 }
-
-
 
 pid_t getPPID(pid_t pid) {
   log_trace("Entering getPPID(%d)", pid);
@@ -238,29 +207,20 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
 
     log_trace("Converting sockaddr_in to presentable IP address");
     inet_ntop(AF_INET, &(ip.sin_addr), ipAddress, INET_ADDRSTRLEN);
-    log_trace("Converting sockaddr_in to IP address succeeded");
+    log_trace("Converting sockaddr_in to IP address succeeded (%s)", ipAddress);
     log_trace("Converting port to presentable format");
     port = htons(ip.sin_port);
-    log_trace("Converting port succeeded");
+    log_trace("Converting port succeeded (%d)", port);
 
-    // inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
-    // port = htons(m->addr.sin_port);
-
-    // printf("%-6d %-6d %-6d %-16s %-16s %-16s %16s %d\n", m->pid, m->ppid,
-    // m->uid, user_c, user_org, m->command, ipAddress, port);
-    //uid_t userAncestor = getUID(org_user);
-	char* currentUser = getUser(m->uid);
-	char * originalUser;
-	if (!userErr) {
-			originalUser = getUser(org_user);
-		} else {
-			originalUser = currentUser;
-		}
+	  char* currentUser = getUser(m->uid);
+    uid_t originalUID = getUID(sshdPID);
+    char* originalUser = getUser(originalUID);
 	
-	printf("%d %d \n",m->uid,org_user);
     printf("%-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d\n", m->pid, m->ppid,
            m->uid, currentUser, originalUser, m->command, ipAddress, port);
 
+    free(currentUser);
+    free(originalUser);
   } else if (m->type_id == GETPEERNAME) {
     log_trace("Converting sockaddr_in to presentable IP address");
     inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
