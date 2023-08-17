@@ -53,32 +53,38 @@ char *getUser(uid_t uid) {
   }
   log_trace("Setting buffer size according to SYSCONF");
   long bufferSize = sysconf(_SC_GETPW_R_SIZE_MAX);
-  if (bufferSize == -1) /* Value was indeterminate */
-    bufferSize = 16384; /* Should be more than enough */
-  // log_trace("Allocating memory for buffer: %d", bufsize);
-  // char *buf = malloc(bufsize);
-  // if (buf == NULL) {
-  //	log_error("Failed to allocate memory for buffer: %d", bufsize);
-  //	exit(EXIT_FAILURE);
-  // }
+  if (bufferSize == -1) //Value was indeterminate 
+    bufferSize = 16384; // Should be more than enough 
+   /*
+   log_trace("Allocating memory for buffer: %d", bufferSize);
+   char *buf = malloc(bufferSize);
+   if (buf == NULL) {
+  	log_error("Failed to allocate memory for buffer: %d", bufferSize);
+  	exit(EXIT_FAILURE);
+   }
+   */
+  
   struct passwd pwd;
   struct passwd *result;
-  char buffer[bufferSize];
-  log_trace("Calling getpwuid_r() to retrieve the readable username");
-  int s = getpwuid_r(uid, &pwd, buffer, bufferSize, &result);
+  char buf[bufferSize];
+  log_trace("Calling getpwuid_r() to retrieve the readable username for %d", uid);
+  int s = getpwuid_r(uid, &pwd, buf, bufferSize, &result);
   if (result == NULL) {
     if (s == 0) {
       log_info("Unable to find username for UID %d", uid);
     } else {
+		errno = s;
       log_error("Encountered an error while calling getpwuid_r()");
     }
     exit(EXIT_FAILURE);
   }
-  // log_trace("Freeing the memory allocated for buffer");
-  // free(buf);
-  log_trace("Exiting getUser()");
+   //log_trace("Freeing the memory allocated for buffer");
+   //free(buf);
+  log_debug("Exiting getUser() with User: %s", pwd.pw_name);
   return pwd.pw_name;
 }
+
+
 
 pid_t getPPID(pid_t pid) {
   log_trace("Entering getPPID(%d)", pid);
@@ -142,7 +148,6 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
   struct data_t *m = data;
   struct sockaddr_in ip;
   char ipAddress[INET_ADDRSTRLEN] = {0};
-  int err2;
 
   pid_t ppid = m->ppid;
   int sockaddrErr = 0;
@@ -177,8 +182,8 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
   }
 
   */
-  int userErr = 1;
-  uid_t org_user = 0;
+  int userErr;
+  uid_t org_user;
   log_trace("%s", "Getting the user BPF map object");
   int userMap = bpf_obj_get("/sys/fs/bpf/raw_user"); // BASH PID -> user #Map3
   if (userMap <= 0) {
@@ -243,9 +248,17 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
 
     // printf("%-6d %-6d %-6d %-16s %-16s %-16s %16s %d\n", m->pid, m->ppid,
     // m->uid, user_c, user_org, m->command, ipAddress, port);
-    uid_t userAncestor = getUID(sshdPID);
-    printf("%-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d\n", m->pid, m->ppid,
-           m->uid, getUser(m->uid), getUser(userAncestor), m->command, ipAddress, port);
+    //uid_t userAncestor = getUID(org_user);
+	char* user_c = getUser(m->uid);
+	if (!userErr) {
+			user_org = getUser(org_user);
+		} else {
+			user_org = user_c;
+		}
+	
+	printf("%d %d \n",m->uid,org_user);
+    printf("%-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d %d\n", m->pid, m->ppid,
+           m->uid, user_c, user_org, m->command, ipAddress, port, sshdPID);
 
   } else if (m->type_id == GETPEERNAME) {
     log_trace("Converting sockaddr_in to presentable IP address");
@@ -296,9 +309,9 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
         close(userportMap);
       }
     }
-    uid_t userAncestor = getUID(ppid);
-    printf("%-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d\n", m->pid, m->ppid,
-           m->uid, getUser(m->uid), getUser(userAncestor), m->command, ipAddress, port);
+    //uid_t userAncestor = getUID(org_user);
+    //printf("%-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d\n", m->pid, m->ppid,
+           //m->uid, getUser(m->uid), getUser(userAncestor), m->command, ipAddress, port);
   } else if (m->type_id == GETSOCKNAME) {
     inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
     port = htons(m->addr.sin_port);
@@ -314,7 +327,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
         bpf_map_update_elem(
             map_port, &port, &ip,
             BPF_ANY); // update Map2 with Port -> ip (sockaddr_in)
-        bpf_map_update_elem(userMapport, &port, &org_user, BPF_ANY);
+        bpf_map_update_elem(userMapport, &port, &org_user, BPF_ANY); // update Map3 with Port -> org_user
       }
 
       close(userMapport);
