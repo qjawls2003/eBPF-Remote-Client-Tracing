@@ -22,7 +22,7 @@
 #define GETSOCKNAME 2
 #define EXECVE 3
 
-static int logLevel = LOG_DEBUG; // set desired logging level here
+static int logLevel = LOG_INFO; // set desired logging level here
 
 volatile sig_atomic_t intSignal;
 
@@ -134,7 +134,8 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
   if (!sockaddrErr) {
     log_trace("Ancestor sockaddr found");
   } else {
-    log_trace("Ancestor sockaddr not found");
+    log_trace("Ancestor sockaddr not found (%s)", m->command);
+    ip = m->addr;
   }
   /*else {
     while (ppid > 0 && sockaddrErr) {
@@ -178,7 +179,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     pid_t sshdPID = m->pid;
     pid_t ppid = m->pid;
     char *comm = getCommand(ppid);
-    //int sockaddrErr = bpf_map_lookup_elem(sockaddrMap, &ppid, &ip); 
+    // int sockaddrErr = bpf_map_lookup_elem(sockaddrMap, &ppid, &ip);
     while (ppid > 1 && strncmp(comm, "(sshd)", 6) != 0) {
       free(comm);
       log_trace("Looking up the parent process of %d", ppid);
@@ -196,8 +197,10 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
         // We want the process just before sshd, i.e. ppid
         sshdPID = ppid;
         log_trace("Looking up PID %d in the sockaddr BPF map", sshdPID);
-        sockaddrErr = bpf_map_lookup_elem(sockaddrMap, &sshdPID, &ip); //update ip
-        userErr = bpf_map_lookup_elem(userMap, &sshdPID, &org_user); //update org_user
+        sockaddrErr =
+            bpf_map_lookup_elem(sockaddrMap, &sshdPID, &ip); // update ip
+        userErr = bpf_map_lookup_elem(userMap, &sshdPID,
+                                      &org_user); // update org_user
         if (sockaddrErr != 0) {
           log_trace(
               "Couldn't find a corresponding sockaddr_in for the sshd process");
@@ -208,7 +211,8 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
       }
       ppid = ancestorPID;
     }
-    log_trace("Reporting %d as the originating PID: %d Command: %s", sshdPID, sshdFound,comm);
+    log_trace("Reporting %d as the originating PID: %d Command: %s", sshdPID,
+              sshdFound, comm);
     free(comm);
     if (sshdFound == false) {
       close(sockaddrMap);
@@ -304,9 +308,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
       if (userErr) {
         org_user = m->uid;
       }
-      if (map_port <= 0 && userMapport <= 0) {
-        printf("No FD\n");
-      } else {
+      if (map_port && userMapport) {
         bpf_map_update_elem(
             map_port, &port, &ip,
             BPF_ANY); // update Map2 with Port -> ip (sockaddr_in)
