@@ -22,6 +22,8 @@
 #define GETSOCKNAME 2
 #define EXECVE 3
 
+static int logLevel = LOG_ERROR; // set desired logging level here
+
 volatile sig_atomic_t intSignal;
 
 void intHandler(int signal) {
@@ -335,7 +337,7 @@ void lost_event(void *ctx, int cpu, long long unsigned int data_sz) {
 }
 
 int main() {
-  log_set_level(LOG_ERROR);
+  log_set_level(logLevel);
   log_trace("%s", "Starting main()");
 
   printf("%-6s %-6s %-6s %-16s %-16s %-16s %-16s %-16s\n", "PID", "PPID", "UID",
