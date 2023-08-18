@@ -246,8 +246,8 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     log_trace("Converting port to presentable format");
     port = htons(m->addr.sin_port);
     log_trace("Converting port succeeded: %d", port);
-    if (strncmp(ipAddress, "127.0.0.1", INET_ADDRSTRLEN) != 0) {
-      log_trace("IP address did not point to localhost");
+    if (!strncmp(ipAddress, "127.0.0.1", INET_ADDRSTRLEN)) {
+      log_trace("Identified getpeername() returning localhost");
       struct sockaddr_in tmpSockaddr;
       uid_t originalUser;
       log_trace("Getting the port BPF map object");
@@ -296,6 +296,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
     port = htons(m->addr.sin_port);
     if (!strncmp(ipAddress, "127.0.0.1", INET_ADDRSTRLEN)) {
+      log_trace("Identified getsockname() returning localhost");
       int map_port =
           bpf_obj_get("/sys/fs/bpf/raw_port"); // BASH port -> IP #Map2
       int userMapport =
