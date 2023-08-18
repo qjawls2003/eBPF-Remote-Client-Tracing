@@ -80,10 +80,10 @@ static int ip_helper(struct sockaddr *ip) {
 
 static int probe_entry_getpeername(void *ctx, struct sockaddr_in *addr) {
   __u64 id = bpf_get_current_pid_tgid();
-  //__u32 pid = id >> 32;
+  pid_t pid = id >> 32;
   pid_t tid = (__u32)id;
 
-  bpf_map_update_elem(&values, &tid, &addr, BPF_ANY);
+  bpf_map_update_elem(&values, &pid, &addr, BPF_ANY);
   return 0;
 };
 
@@ -94,7 +94,7 @@ static int probe_return_getpeername(void *ctx, int ret) {
   uid_t uid = bpf_get_current_uid_gid() & 0xFFFFFFFF;
 
   struct sockaddr_in **addrpp;
-  addrpp = bpf_map_lookup_elem(&values, &tid);
+  addrpp = bpf_map_lookup_elem(&values, &pid);
   if (!addrpp)
     return 0;
 
@@ -125,9 +125,10 @@ static int probe_return_getpeername(void *ctx, int ret) {
 
 static int probe_entry_getsockname(void *ctx, struct sockaddr_in *addr) {
   __u64 id = bpf_get_current_pid_tgid();
+  pid_t pid = id >> 32;
   pid_t tid = (__u32)id;
 
-  bpf_map_update_elem(&values, &tid, &addr, BPF_ANY);
+  bpf_map_update_elem(&values, &pid, &addr, BPF_ANY);
   return 0;
 };
 
@@ -140,7 +141,7 @@ static int probe_return_getsockname(void *ctx, int ret) {
   struct sockaddr_in *addr;
   struct data_t data = {};
 
-  addrpp = bpf_map_lookup_elem(&values, &tid);
+  addrpp = bpf_map_lookup_elem(&values, &pid);
   if (!addrpp)
     return 0;
 
@@ -151,7 +152,7 @@ static int probe_return_getsockname(void *ctx, int ret) {
   bpf_get_current_comm(&data.command, sizeof(data.command));
   data.type_id = 2;
   int err = bpf_probe_read_user(&data.addr, sizeof(data.addr), addr);
-  int res = bpf_strncmp(data.command, 8, "ssh");
+  int res = bpf_strncmp(data.command, 3, "ssh");
   if (!res) {
     // bpf_printk("Command: %s , %s Res: %d",str1, data.command, res);
     bpf_perf_event_output(ctx, &output, BPF_F_CURRENT_CPU, &data, sizeof(data));
