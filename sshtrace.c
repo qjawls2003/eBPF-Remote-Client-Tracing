@@ -244,7 +244,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     log_trace("Converting port to presentable format");
     port = htons(m->addr.sin_port);
     log_trace("Converting port succeeded: %d", port);
-    if (!strncmp(ipAddress, "127.0.0.1", INET_ADDRSTRLEN)) {
+    if (strncmp(ipAddress, "127.0.0.1", INET_ADDRSTRLEN) != 0) {
       log_trace("IP address did not point to localhost");
       struct sockaddr_in tmpSockaddr;
       uid_t originalUser;
