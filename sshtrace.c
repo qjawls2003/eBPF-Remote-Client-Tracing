@@ -22,6 +22,8 @@
 #define GETSOCKNAME 2
 #define EXECVE 3
 
+static int logLevel = LOG_ERROR; // set desired logging level here
+
 volatile sig_atomic_t intSignal;
 
 void intHandler(int signal) {
@@ -64,7 +66,7 @@ pid_t getPPID(pid_t pid) {
   sprintf(file, "/proc/%d/stat", pid);
   FILE *f = fopen(file, "r");
   if (f == NULL) {
-    //log_error("Failed to open %s, returning default PID 1", file);
+    log_warn("Failed to open %s, returning default PID 1", file);
     return ppid;
   }
   fscanf(f, "%*d %*s %*c %d", &ppid);
@@ -80,7 +82,7 @@ char *getCommand(pid_t pid) {
   sprintf(file, "/proc/%d/stat", pid);
   FILE *f = fopen(file, "r");
   if (f == NULL) {
-    //log_error("Failed to open %s, returning empty command", file);
+    log_warn("Failed to open %s, returning empty command", file);
     return comm;
   }
   fscanf(f, "%*d %s %*c %*d", comm);
@@ -100,7 +102,7 @@ uid_t getUID(pid_t pid) {
   sprintf(file, "/proc/%d/status", pid);
   FILE *f = fopen(file, "r");
   if (f == NULL) {
-    //log_error("Failed to open %s, returning empty UID", file);
+    log_warn("Failed to open %s, returning empty UID", file);
     return uid;
   }
   char tmp[256];
@@ -187,8 +189,9 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
       char *comm = getCommand(ancestorPID);
       log_trace("Found invoking command of %d, %s", ancestorPID, comm);
       if (strncmp(comm, "(sshd)", 6) == 0) {
-        log_trace("Found an sshd task in the process tree with PID: %d and command: %s",
-                  ancestorPID,comm);
+        log_trace("Found an sshd task in the process tree with PID: %d and "
+                  "command: %s",
+                  ancestorPID, comm);
         sshdFound = true;
         // We want the process just before sshd, i.e. ppid
         sshdPID = ppid;
@@ -220,17 +223,16 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     log_trace("Converting port succeeded (%d)", port);
     log_trace("Using this PID for getUID (%d)", sshdPID);
     char *originalUser;
-    
+
     if (userErr == 0) {
       log_trace("OriginalUser found");
       originalUser = getUser(org_user);
-    } else { //case when localhost ssh to localhost
+    } else { // case when localhost ssh to localhost
       log_trace("OriginalUser not found, use currentUser");
       uid_t originalUID = getUID(sshdPID);
       originalUser = getUser(originalUID);
     }
     char *currentUser = getUser(m->uid);
-    
 
     printf("%-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d\n", m->pid, m->ppid,
            m->uid, currentUser, originalUser, m->command, ipAddress, port);
@@ -244,7 +246,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     log_trace("Converting port to presentable format");
     port = htons(m->addr.sin_port);
     log_trace("Converting port succeeded: %d", port);
-    if (!strncmp(ipAddress, "127.0.0.1", INET_ADDRSTRLEN)) {
+    if (strncmp(ipAddress, "127.0.0.1", INET_ADDRSTRLEN) != 0) {
       log_trace("IP address did not point to localhost");
       struct sockaddr_in tmpSockaddr;
       uid_t originalUser;
@@ -307,7 +309,8 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
         bpf_map_update_elem(
             map_port, &port, &ip,
             BPF_ANY); // update Map2 with Port -> ip (sockaddr_in)
-        log_trace("Updating the UID %d corresponding to port %d", org_user,port);
+        log_trace("Updating the UID %d corresponding to port %d", org_user,
+                  port);
         bpf_map_update_elem(userMapport, &port, &org_user,
                             BPF_ANY); // update Map3 with Port -> org_user
       }
@@ -334,7 +337,7 @@ void lost_event(void *ctx, int cpu, long long unsigned int data_sz) {
 }
 
 int main() {
-  log_set_level(LOG_DEBUG);
+  log_set_level(logLevel);
   log_trace("%s", "Starting main()");
 
   printf("%-6s %-6s %-6s %-16s %-16s %-16s %-16s %-16s\n", "PID", "PPID", "UID",
