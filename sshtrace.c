@@ -195,10 +195,10 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
         log_trace("Looking up PID %d in the sockaddr BPF map", sshdPID);
         sockaddrErr = bpf_map_lookup_elem(sockaddrMap, &sshdPID, &ip);
         if (sockaddrErr != 0) {
-          log_debug(
+          log_trace(
               "Couldn't find a corresponding sockaddr_in for the sshd process");
         } else {
-          log_debug("Found a corresponding sockaddr_in for the sshd process");
+          log_trace("Found a corresponding sockaddr_in for the sshd process");
           break;
         }
       }
