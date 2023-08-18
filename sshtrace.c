@@ -233,7 +233,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
       originalUser = getUser(originalUID);
     }
     char *currentUser = getUser(m->uid);
-
+    //test
     printf("%-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d\n", m->pid, m->ppid,
            m->uid, currentUser, originalUser, m->command, ipAddress, port);
 
