@@ -145,6 +145,9 @@ static int probe_return_getsockname(void *ctx, int ret) {
   if (!addrpp)
     return 0;
 
+  struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+  data.ppid = (pid_t)BPF_CORE_READ(task, real_parent, tgid);
+
   addr = *addrpp;
   data.pid = pid;
   data.uid = uid;
