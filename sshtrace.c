@@ -49,7 +49,7 @@ char *getUser(uid_t uid) {
   char *user = (char *)malloc(bufferSize);
   struct passwd *pwd = getpwuid(uid);
   if (pwd == NULL) {
-    log_info("Unable to find username for UID %d", uid);
+    log_trace("Unable to find username for UID %d", uid);
     char tmp[3] = "n/a";
     strcpy(user, tmp);
   } else {
@@ -119,7 +119,7 @@ uid_t getUID(pid_t pid) {
 void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
   log_trace("%s", "Entering handle_event()");
   struct data_t *m = data;
-  struct sockaddr_in ip;
+  struct sockaddr_in ip = {0};
   char ipAddress[INET_ADDRSTRLEN] = {0};
 
   pid_t ppid = m->ppid;
@@ -132,30 +132,13 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
   }
   sockaddrErr = bpf_map_lookup_elem(sockaddrMap, &ppid, &ip);
   if (!sockaddrErr) {
-    log_trace("Ancestor sockaddr found");
+    log_trace("Ancestor sockaddr found (%s) with PID (%d)", m->command, ppid);
   } else {
-    log_trace("Ancestor sockaddr not found (%s)", m->command);
+    log_trace("Ancestor sockaddr not found (%s) with PID (%d)", m->command, ppid);
     ip = m->addr;
   }
-  /*else {
-    while (ppid > 0 && sockaddrErr) {
-      log_trace("Looking up PPID %d in the sockaddr BPF map", ppid);
-      sockaddrErr = bpf_map_lookup_elem(sockaddrMap, &ppid, &ip);
-      log_trace("Looking up the parent process of %d", ppid);
-      pid_t ancestorPID = getPPID(ppid);
-      ppid = ancestorPID;
-      // err = bpf_map_lookup_elem(map_pid, &ppid, &ip);
-    }
-    log_trace("Oldest ancestor PID found: %d", ppid);
-  }
 
-  if (!sockaddrErr) {
-    log_trace("Ancestor sockaddr found");
-  } else {
-    log_trace("Ancestor sockaddr not found");
-  }
-
-  */
+  
   int userErr;
   uid_t org_user;
   log_trace("%s", "Getting the user BPF map object");
@@ -179,7 +162,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     pid_t sshdPID = m->pid;
     pid_t ppid = m->pid;
     char *comm = getCommand(ppid);
-    // int sockaddrErr = bpf_map_lookup_elem(sockaddrMap, &ppid, &ip);
+    int sockaddrErr = bpf_map_lookup_elem(sockaddrMap, &ppid, &ip);
     while (ppid > 1 && strncmp(comm, "(sshd)", 6) != 0) {
       free(comm);
       log_trace("Looking up the parent process of %d", ppid);
@@ -211,7 +194,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
       }
       ppid = ancestorPID;
     }
-    log_trace("Reporting %d as the originating PID: %d Command: %s", sshdPID,
+    log_debug("Reporting %d as the originating PID: %d Command: %s", sshdPID,
               sshdFound, comm);
     free(comm);
     if (sshdFound == false) {
@@ -219,6 +202,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
       close(userMap);
       return;
     }
+
     log_trace("Converting sockaddr_in to presentable IP address");
     inet_ntop(AF_INET, &(ip.sin_addr), ipAddress, INET_ADDRSTRLEN);
     log_trace("Converting sockaddr_in to IP address succeeded (%s)", ipAddress);
@@ -299,8 +283,9 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
   } else if (m->type_id == GETSOCKNAME) {
     inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
     port = htons(m->addr.sin_port);
+    log_trace("Converting getsockname() port and received %d", port);
     if (!strncmp(ipAddress, "127.0.0.1", INET_ADDRSTRLEN)) {
-      log_trace("Server IP address is localhost");
+      log_trace("Your IP address is localhost");
       int map_port =
           bpf_obj_get("/sys/fs/bpf/raw_port"); // BASH port -> IP #Map2
       int userMapport =
@@ -309,6 +294,17 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
         org_user = m->uid;
       }
       if (map_port && userMapport) {
+        // I feel like we need to have a while loop here to crawl the process
+        // tree
+        sockaddrErr = bpf_map_lookup_elem(sockaddrMap, &m->ppid, &ip);
+        if (sockaddrErr == 0) {
+          log_trace("Found sockaddr_in for PID %d", m->ppid);
+        } else {
+          log_trace("Could not find sockaddr_in for PID %d", m->ppid);
+        }
+        inet_ntop(AF_INET, &(ip.sin_addr), ipAddress, INET_ADDRSTRLEN);
+        log_trace("Updating the IP: %s corresponding to port %d", ipAddress,
+                  port);
         bpf_map_update_elem(
             map_port, &port, &ip,
             BPF_ANY); // update Map2 with Port -> ip (sockaddr_in)
