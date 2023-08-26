@@ -49,20 +49,28 @@ struct ipData {
 
 struct ipData ipHelper(struct sockaddr *ipRaw) {
   struct ipData ipRes ={0};
-  char buf[64];
   switch (ipRaw->sa_family) {
   case AF_INET: { // IPv4
     struct sockaddr_in * ip = (struct sockaddr_in *)ipRaw;
     inet_ntop(AF_INET, &(ip->sin_addr), ipRes.ipAddress, INET_ADDRSTRLEN);
     ipRes.port = htons(ip->sin_port);
-    log_trace("Converting sockaddr to IPv4 address Successful: %s %d", ipRes.ipAddress,ipRes.port);
+    log_info("Converting sockaddr to IPv4 address Successful: %s %d", ipRes.ipAddress,ipRes.port);
     return ipRes;
   }
   case AF_INET6: { // IPv6
     struct sockaddr_in6 * ip6 = (struct sockaddr_in6 *)ipRaw;
-    inet_ntop(AF_INET6, &(ip6->sin6_addr), buf, INET6_ADDRSTRLEN);
+    inet_ntop(AF_INET6, &(ip6->sin6_addr), ipRes.ipAddress, INET6_ADDRSTRLEN);
     ipRes.port = htons(ip6->sin6_port);
-    log_info("Converting sockaddr to IPv6 address Successful: %s %d", buf,ipRes.port);
+    log_info("Converting sockaddr to IPv6 address Successful: %s %d", ipRes.ipAddress,ipRes.port);
+    printf("%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x\n",
+	       ip6->sin6_addr.s6_addr[0],  ip6->sin6_addr.s6_addr[1],
+	       ip6->sin6_addr.s6_addr[2],  ip6->sin6_addr.s6_addr[3],
+	       ip6->sin6_addr.s6_addr[4],  ip6->sin6_addr.s6_addr[5],
+	       ip6->sin6_addr.s6_addr[6],  ip6->sin6_addr.s6_addr[7],
+	       ip6->sin6_addr.s6_addr[8],  ip6->sin6_addr.s6_addr[9],
+	       ip6->sin6_addr.s6_addr[10], ip6->sin6_addr.s6_addr[11],
+	       ip6->sin6_addr.s6_addr[12], ip6->sin6_addr.s6_addr[13],
+	       ip6->sin6_addr.s6_addr[14], ip6->sin6_addr.s6_addr[15]);
     return ipRes;
   }
   default:
