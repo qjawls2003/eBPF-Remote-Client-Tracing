@@ -18,7 +18,7 @@ struct data_t {
   pid_t ppid;
   char command[TASK_COMM_LEN];
   int ret;
-  struct sockaddr_in addr;
+  struct sockaddr addr;
   int type_id; // 0:others 1:getpeername 2:getsockname 3:execve
 };
 

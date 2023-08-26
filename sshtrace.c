@@ -22,6 +22,8 @@
 #define GETSOCKNAME 2
 #define EXECVE 3
 
+int count = 0;
+
 static int logLevel = LOG_INFO; // set desired logging level here
 
 volatile sig_atomic_t intSignal;
@@ -38,6 +40,35 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
     return 0;
 
   return vfprintf(stderr, format, args);
+}
+
+struct ipData {
+  char ipAddress[INET6_ADDRSTRLEN];
+  uint16_t port;
+};
+
+struct ipData ipHelper(struct sockaddr *ipRaw) {
+  struct ipData ipRes ={0};
+  char buf[64];
+  switch (ipRaw->sa_family) {
+  case AF_INET: { // IPv4
+    struct sockaddr_in * ip = (struct sockaddr_in *)ipRaw;
+    inet_ntop(AF_INET, &(ip->sin_addr), ipRes.ipAddress, INET_ADDRSTRLEN);
+    ipRes.port = htons(ip->sin_port);
+    log_trace("Converting sockaddr to IPv4 address Successful: %s %d", ipRes.ipAddress,ipRes.port);
+    return ipRes;
+  }
+  case AF_INET6: { // IPv6
+    struct sockaddr_in6 * ip6 = (struct sockaddr_in6 *)ipRaw;
+    inet_ntop(AF_INET6, &(ip6->sin6_addr), buf, INET6_ADDRSTRLEN);
+    ipRes.port = htons(ip6->sin6_port);
+    log_info("Converting sockaddr to IPv6 address Successful: %s %d", buf,ipRes.port);
+    return ipRes;
+  }
+  default:
+    log_trace("Converting sockaddr_in to IP address Not Successful");
+    return ipRes;
+  }
 }
 
 char *getUser(uid_t uid) {
@@ -118,9 +149,10 @@ uid_t getUID(pid_t pid) {
 
 void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
   log_trace("%s", "Entering handle_event()");
+  count++;
   struct data_t *m = data;
-  struct sockaddr_in ip = {0};
-  char ipAddress[INET_ADDRSTRLEN] = {0};
+  struct sockaddr ip = {0};
+  //char ipAddress[INET6_ADDRSTRLEN] = {0};
 
   pid_t ppid = m->ppid;
   int sockaddrErr = 0;
@@ -202,7 +234,9 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
       close(userMap);
       return;
     }
+    struct ipData ipRes = ipHelper(&ip);
 
+    /*
     log_trace("Converting sockaddr_in to presentable IP address");
     inet_ntop(AF_INET, &(ip.sin_addr), ipAddress, INET_ADDRSTRLEN);
     log_trace("Converting sockaddr_in to IP address succeeded (%s)", ipAddress);
@@ -210,6 +244,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     port = htons(ip.sin_port);
     log_trace("Converting port succeeded (%d)", port);
     log_trace("Using this PID for getUID (%d)", sshdPID);
+    */
     char *originalUser;
 
     if (userErr == 0) {
@@ -223,20 +258,24 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     char *currentUser = getUser(m->uid);
 
     printf("%-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d\n", m->pid, m->ppid,
-           m->uid, currentUser, originalUser, m->command, ipAddress, port);
+           m->uid, currentUser, originalUser, m->command, ipRes.ipAddress, ipRes.port);
 
     free(currentUser);
     free(originalUser);
   } else if (m->type_id == GETPEERNAME) {
+    struct ipData ipRes = ipHelper(&m->addr);
+    /*
     log_trace("Converting sockaddr_in to presentable IP address");
     inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
     log_trace("Converting sockaddr_in to IP address succeeded: %s", ipAddress);
     log_trace("Converting port to presentable format");
     port = htons(m->addr.sin_port);
     log_trace("Converting port succeeded: %d", port);
-    if (!strncmp(ipAddress, "127.0.0.1", INET_ADDRSTRLEN)) {
+    */
+    log_trace("Converting sockaddr to IP address succeeded: %s", ipRes.ipAddress);
+    if (!strncmp(ipRes.ipAddress, "127.0.0.1", INET_ADDRSTRLEN)) {
       log_trace("Client IP address is localhost");
-      struct sockaddr_in tmpSockaddr;
+      struct sockaddr tmpSockaddr;
       uid_t originalUser;
       log_trace("Getting the port BPF map object");
       int portMap = bpf_obj_get("/sys/fs/bpf/raw_port"); // BASH port -> IP
@@ -256,7 +295,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
                   "port map",
                   port);
         bpf_map_lookup_elem(
-            portMap, &port,
+            portMap, &ipRes.port,
             &tmpSockaddr); // look up sockaddr_in from Map2 using port
         log_trace("Updating the sockaddr_in corresponding to PID %d in the "
                   "sockaddr map",
@@ -267,7 +306,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
         log_trace(
             "Looking up the user corresponding to port %d in the userport map",
             port);
-        bpf_map_lookup_elem(userportMap, &port, &originalUser); //
+        bpf_map_lookup_elem(userportMap, &ipRes.port, &originalUser); //
         log_trace("Updating the user corresponding to PID %d in the user map",
                   m->pid);
         bpf_map_update_elem(userMap, &m->pid, &originalUser, BPF_ANY);
@@ -281,10 +320,14 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     // m->uid, getUser(m->uid), getUser(userAncestor), m->command, ipAddress,
     // port);
   } else if (m->type_id == GETSOCKNAME) {
+     struct ipData ipRes = ipHelper(&m->addr);
+    /*
     inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
     port = htons(m->addr.sin_port);
     log_trace("Converting getsockname() port and received %d", port);
-    if (!strncmp(ipAddress, "127.0.0.1", INET_ADDRSTRLEN)) {
+    */
+    log_trace("Converting sockaddr to IP address succeeded: %s", ipRes.ipAddress);
+    if (!strncmp(ipRes.ipAddress, "127.0.0.1", INET_ADDRSTRLEN)) {
       log_trace("Your IP address is localhost");
       int map_port =
           bpf_obj_get("/sys/fs/bpf/raw_port"); // BASH port -> IP #Map2
@@ -302,15 +345,15 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
         } else {
           log_trace("Could not find sockaddr_in for PID %d", m->ppid);
         }
-        inet_ntop(AF_INET, &(ip.sin_addr), ipAddress, INET_ADDRSTRLEN);
-        log_trace("Updating the IP: %s corresponding to port %d", ipAddress,
-                  port);
+        //struct ipData ipRes2 = ipHelper(&ip);
+        //inet_ntop(AF_INET, &(ip.sin_addr), ipAddress, INET_ADDRSTRLEN);
+        //log_trace("Updating the IP: %s corresponding to port %d", ipAddress,port);
         bpf_map_update_elem(
-            map_port, &port, &ip,
+            map_port, &ipRes.port, &ip,
             BPF_ANY); // update Map2 with Port -> ip (sockaddr_in)
         log_trace("Updating the UID %d corresponding to port %d", org_user,
                   port);
-        bpf_map_update_elem(userMapport, &port, &org_user,
+        bpf_map_update_elem(userMapport, &ipRes.port, &org_user,
                             BPF_ANY); // update Map3 with Port -> org_user
       }
 
@@ -359,10 +402,21 @@ int main() {
 
   log_trace("%s", "Loading BPF skeleton object");
   err = sshtrace_bpf__load(skel);
+    	// Print the verifier log
+  /*
+	for (int i=0; i < 10000; i++) {
+		if (log_buf[i] == 0 && log_buf[i+1] == 0) {
+			break;
+		}
+		printf("%c", log_buf[i]);
+	}
+  */
   if (err) {
     log_error("%s", "Error while loading BPF skeleton object");
     goto cleanup;
   }
+
+
 
   log_trace("%s", "Attaching BPF skeleton object");
   err = sshtrace_bpf__attach(skel);
