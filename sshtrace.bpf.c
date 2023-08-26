@@ -24,6 +24,7 @@ struct {
   __uint(max_entries, 10240);
   __type(key, pid_t);
   __type(value, struct event);
+  __uint(pinning, LIBBPF_PIN_BY_NAME);
 } execs SEC(".maps");
 
 struct {
@@ -197,9 +198,9 @@ int tracepoint__syscalls__sys_enter_execve(
   unsigned int ret;
   struct event *event;
   struct task_struct *task;
-  const char **args = (const char **)(ctx->args[1]);
-  const char *argp;
-
+  //const char **args = (const char **)(ctx->args[1]);
+  //const char *argp;
+ 
   if (filter_cg && !bpf_current_task_under_cgroup(&cgroup_map, 0))
     return 0;
 
@@ -216,16 +217,18 @@ int tracepoint__syscalls__sys_enter_execve(
   event = bpf_map_lookup_elem(&execs, &pid);
   if (!event)
     return 0;
-
+  
   event->pid = tgid;
   event->uid = uid;
   task = (struct task_struct *)bpf_get_current_task();
   event->ppid = (pid_t)BPF_CORE_READ(task, real_parent, tgid);
+      
+
   event->args_count = 0;
   event->args_size = 0;
-
-  ret =
-      bpf_probe_read_user_str(event->args, ARGSIZE, (const char *)ctx->args[0]);
+  
+  ret = bpf_probe_read_user_str(event->args, ARGSIZE, (const char *)ctx->args[0]);
+  
   if (ret <= ARGSIZE) {
     event->args_size += ret;
   } else {
@@ -233,8 +236,11 @@ int tracepoint__syscalls__sys_enter_execve(
     event->args[0] = '\0';
     event->args_size++;
   }
-
+  
   event->args_count++;
+  //bpf_printk("Event...arg count: %d, arg: %s", event->args_count, event->args);
+
+/*
 #pragma unroll
   for (i = 1; i < TOTAL_MAX_ARGS && i < max_args; i++) {
     bpf_probe_read_user(&argp, sizeof(argp), &args[i]);
@@ -252,14 +258,16 @@ int tracepoint__syscalls__sys_enter_execve(
     event->args_count++;
     event->args_size += ret;
   }
+  */
+
   /* try to read one more argument to check if there is one */
-  bpf_probe_read_user(&argp, sizeof(argp), &args[max_args]);
-  if (!argp)
-    return 0;
+  //bpf_probe_read_user(&argp, sizeof(argp), &args[max_args]);
+  //if (!argp)
+  //  return 0;
 
-  /* pointer to max_args+1 isn't null, asume we have more arguments */
-  event->args_count++;
-
+  /* pointer to max_args+1 isn't null, assume we have more arguments */
+  //event.args_count++;
+  
   return 0;
 }
 
@@ -300,12 +308,12 @@ int tracepoint__syscalls__sys_exit_execve(
 
   // size_t len = EVENT_SIZE(e);
   // if (len <= sizeof(e))
-  bpf_printk("Sending event...");
+  //bpf_printk("Sending event...");
 
   bpf_perf_event_output(ctx, &output, BPF_F_CURRENT_CPU, &data, sizeof(data));
 
 cleanup:
-  bpf_map_delete_elem(&execs, &pid);
+  //bpf_map_delete_elem(&execs, &pid);
   return 0;
 }
 

@@ -54,14 +54,15 @@ struct ipData ipHelper(struct sockaddr *ipRaw) {
     struct sockaddr_in * ip = (struct sockaddr_in *)ipRaw;
     inet_ntop(AF_INET, &(ip->sin_addr), ipRes.ipAddress, INET_ADDRSTRLEN);
     ipRes.port = htons(ip->sin_port);
-    log_info("Converting sockaddr to IPv4 address Successful: %s %d", ipRes.ipAddress,ipRes.port);
+    log_trace("Converting sockaddr to IPv4 address Successful: %s %d", ipRes.ipAddress,ipRes.port);
     return ipRes;
   }
   case AF_INET6: { // IPv6
     struct sockaddr_in6 * ip6 = (struct sockaddr_in6 *)ipRaw;
     inet_ntop(AF_INET6, &(ip6->sin6_addr), ipRes.ipAddress, INET6_ADDRSTRLEN);
     ipRes.port = htons(ip6->sin6_port);
-    log_info("Converting sockaddr to IPv6 address Successful: %s %d", ipRes.ipAddress,ipRes.port);
+    log_trace("Converting sockaddr to IPv6 address Successful: %s %d", ipRes.ipAddress,ipRes.port);
+    /*
     printf("%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x\n",
 	       ip6->sin6_addr.s6_addr[0],  ip6->sin6_addr.s6_addr[1],
 	       ip6->sin6_addr.s6_addr[2],  ip6->sin6_addr.s6_addr[3],
@@ -71,6 +72,7 @@ struct ipData ipHelper(struct sockaddr *ipRaw) {
 	       ip6->sin6_addr.s6_addr[10], ip6->sin6_addr.s6_addr[11],
 	       ip6->sin6_addr.s6_addr[12], ip6->sin6_addr.s6_addr[13],
 	       ip6->sin6_addr.s6_addr[14], ip6->sin6_addr.s6_addr[15]);
+         */
     return ipRes;
   }
   default:
@@ -264,10 +266,21 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
       originalUser = getUser(originalUID);
     }
     char *currentUser = getUser(m->uid);
-
-    printf("%-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d\n", m->pid, m->ppid,
-           m->uid, currentUser, originalUser, m->command, ipRes.ipAddress, ipRes.port);
-
+  struct event eventArg;
+  int eventErr;
+  int eventMap = bpf_obj_get("/sys/fs/bpf/execs"); // event for args
+  if (eventMap <= 0) {
+    log_trace("%s", "No file descriptor returned for the user BPF map object");
+  } else {
+    eventErr = bpf_map_lookup_elem(eventMap, &m->pid, &eventArg);
+    if (eventErr==0) {
+      log_trace("Looked up ARGs '%d' in the event BPF map", eventArg.pid);
+    } else {
+      log_trace("No Event returned for %d, instead got: %d",m->pid, eventArg.pid);
+    }
+  }
+    printf("%-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d %-6s\n", m->pid, m->ppid,
+           m->uid, currentUser, originalUser, m->command, ipRes.ipAddress, ipRes.port,eventArg.args);
     free(currentUser);
     free(originalUser);
   } else if (m->type_id == GETPEERNAME) {
@@ -390,8 +403,8 @@ int main() {
   log_set_level(logLevel);
   log_trace("%s", "Starting main()");
 
-  printf("%-6s %-6s %-6s %-16s %-16s %-16s %-16s %-16s\n", "PID", "PPID", "UID",
-         "Current User", "Origin User", "Command", "IP Address", "Port");
+  printf("%-6s %-6s %-6s %-16s %-16s %-16s %-16s %-16s %-6s\n", "PID", "PPID", "UID",
+         "Current User", "Origin User", "Command", "IP Address", "Port", "BinPath");
 
   log_trace("%s", "Setting LIBBPF options");
   libbpf_set_print(libbpf_print_fn);
