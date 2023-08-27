@@ -47,9 +47,9 @@ struct ipData {
   uint16_t port;
 };
 
-struct ipData ipHelper(struct sockaddr *ipRaw) {
-  struct ipData ipRes ={0};
-  switch (ipRaw->sa_family) {
+struct ipData ipHelper(struct sockaddr_in6 *ipRaw) {
+  struct ipData ipRes = {0};
+  switch (ipRaw->sin6_family) {
   case AF_INET: { // IPv4
     struct sockaddr_in * ip = (struct sockaddr_in *)ipRaw;
     inet_ntop(AF_INET, &(ip->sin_addr), ipRes.ipAddress, INET_ADDRSTRLEN);
@@ -161,7 +161,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
   log_trace("%s", "Entering handle_event()");
   count++;
   struct data_t *m = data;
-  struct sockaddr ip = {0};
+  struct sockaddr_in6 ip = {0};
   //char ipAddress[INET6_ADDRSTRLEN] = {0};
 
   pid_t ppid = m->ppid;
@@ -236,27 +236,27 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
       }
       ppid = ancestorPID;
     }
-    log_debug("Reporting %d as the originating PID: %d Command: %s", sshdPID,
-              sshdFound, comm);
+    
     free(comm);
     if (sshdFound == false) {
       close(sockaddrMap);
       close(userMap);
       return;
     }
+    log_trace("Reporting %d as the originating PID and found: %d", sshdPID, sockaddrErr);
+    log_trace("Converting sockaddr_in to presentable IP address at %d", &ip);
     struct ipData ipRes = ipHelper(&ip);
 
-    /*
-    log_trace("Converting sockaddr_in to presentable IP address");
-    inet_ntop(AF_INET, &(ip.sin_addr), ipAddress, INET_ADDRSTRLEN);
-    log_trace("Converting sockaddr_in to IP address succeeded (%s)", ipAddress);
+   /*
+    inet_ntop(AF_INET6, &(ip.sin6_addr), ipAddress, INET6_ADDRSTRLEN);
+    log_info("Converting sockaddr_in to IP address succeeded (%s)", ipAddress);
     log_trace("Converting port to presentable format");
-    port = htons(ip.sin_port);
+    port = htons(ip.sin6_port);
     log_trace("Converting port succeeded (%d)", port);
     log_trace("Using this PID for getUID (%d)", sshdPID);
     */
+   
     char *originalUser;
-
     if (userErr == 0) {
       log_trace("OriginalUser found");
       originalUser = getUser(org_user);
@@ -281,10 +281,11 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
   }
     printf("%-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d %-6s\n", m->pid, m->ppid,
            m->uid, currentUser, originalUser, m->command, ipRes.ipAddress, ipRes.port,eventArg.args);
+    
     free(currentUser);
     free(originalUser);
   } else if (m->type_id == GETPEERNAME) {
-    struct ipData ipRes = ipHelper(&m->addr);
+    struct ipData ipRes = ipHelper(&ip);
     /*
     log_trace("Converting sockaddr_in to presentable IP address");
     inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
@@ -293,10 +294,10 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     port = htons(m->addr.sin_port);
     log_trace("Converting port succeeded: %d", port);
     */
-    log_trace("Converting sockaddr to IP address succeeded: %s", ipRes.ipAddress);
-    if (!strncmp(ipRes.ipAddress, "127.0.0.1", INET_ADDRSTRLEN)) {
+    log_trace("Converting sockaddr to IP address succeeded: %s for PID: %d at %d", ipRes.ipAddress, m->pid,&ip);
+    if (!strncmp(ipRes.ipAddress, "127.0.0.1", INET_ADDRSTRLEN) || !strncmp(ipRes.ipAddress, "::1", INET6_ADDRSTRLEN)) {
       log_trace("Client IP address is localhost");
-      struct sockaddr tmpSockaddr;
+      struct sockaddr_in6 tmpSockaddr;
       uid_t originalUser;
       log_trace("Getting the port BPF map object");
       int portMap = bpf_obj_get("/sys/fs/bpf/raw_port"); // BASH port -> IP
@@ -342,13 +343,14 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     // port);
   } else if (m->type_id == GETSOCKNAME) {
      struct ipData ipRes = ipHelper(&m->addr);
+
     /*
     inet_ntop(AF_INET, &(m->addr.sin_addr), ipAddress, INET_ADDRSTRLEN);
     port = htons(m->addr.sin_port);
     log_trace("Converting getsockname() port and received %d", port);
     */
     log_trace("Converting sockaddr to IP address succeeded: %s", ipRes.ipAddress);
-    if (!strncmp(ipRes.ipAddress, "127.0.0.1", INET_ADDRSTRLEN)) {
+    if (!strncmp(ipRes.ipAddress, "127.0.0.1", INET_ADDRSTRLEN) || !strncmp(ipRes.ipAddress, "::1", INET6_ADDRSTRLEN)) {
       log_trace("Your IP address is localhost");
       int map_port =
           bpf_obj_get("/sys/fs/bpf/raw_port"); // BASH port -> IP #Map2
@@ -390,7 +392,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     // user_c, m->command, "localhost", 0);
   }
 
-  close(sockaddrMap);
+  //close(sockaddrMap);
   close(userMap);
   log_trace("Exiting handle_event()");
 }

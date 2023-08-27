@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause) */
-#ifndef __EXECSNOOP_H
-#define __EXECSNOOP_H
-
+#ifndef __SSHTRACE_H
+#define __SSHTRACE_H
 #define ARGSIZE 128
 #define TASK_COMM_LEN 16
 #define TOTAL_MAX_ARGS 60
@@ -18,7 +17,7 @@ struct data_t {
   pid_t ppid;
   char command[TASK_COMM_LEN];
   int ret;
-  struct sockaddr addr;
+  struct sockaddr_in6 addr;
   int type_id; // 0:others 1:getpeername 2:getsockname 3:execve
 };
 
@@ -33,4 +32,4 @@ struct event {
   char args[FULL_MAX_ARGS_ARR];
 };
 
-#endif /* __EXECSNOOP_H */
+#endif /* __SSHTRACE_H */

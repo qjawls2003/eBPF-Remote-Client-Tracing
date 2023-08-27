@@ -16,7 +16,7 @@ struct {
   __uint(type, BPF_MAP_TYPE_HASH);
   __uint(max_entries, 10240);
   __type(key, pid_t);
-  __type(value, struct sockaddr *);
+  __type(value, struct sockaddr_in6 *);
 } values SEC(".maps");
 
 struct {
@@ -31,7 +31,7 @@ struct {
   __uint(type, BPF_MAP_TYPE_HASH);
   __uint(max_entries, 10240);
   __type(key, pid_t);
-  __type(value, struct sockaddr *);
+  __type(value, struct sockaddr_in6 *);
   __uint(pinning, LIBBPF_PIN_BY_NAME);
 } raw_sockaddr SEC(".maps");
 
@@ -39,7 +39,7 @@ struct {
   __uint(type, BPF_MAP_TYPE_HASH);
   __uint(max_entries, 10240);
   __type(key, uint16_t);
-  __type(value, struct sockaddr *);
+  __type(value, struct sockaddr_in6 *);
   __uint(pinning, LIBBPF_PIN_BY_NAME);
 } raw_port SEC(".maps");
 
@@ -68,7 +68,7 @@ struct {
 
 
 
-static int probe_entry_getpeername(void *ctx, struct sockaddr *addr) {
+static int probe_entry_getpeername(void *ctx, struct sockaddr_in6 *addr) {
   __u64 id = bpf_get_current_pid_tgid();
   pid_t pid = id >> 32;
   pid_t tid = (__u32)id;
@@ -85,13 +85,13 @@ static int probe_return_getpeername(void *ctx, int ret) {
 
   //struct sockaddr_in **addrpp;
   //struct sockaddr_in *addr;
-  struct sockaddr **addrpp;
+  struct sockaddr_in6 **addrpp;
 
   addrpp = bpf_map_lookup_elem(&values, &pid);
   if (!addrpp)
     return 0;
 
-  struct sockaddr *addr;
+  struct sockaddr_in6 *addr;
   addr = *addrpp;
 
   struct data_t data = {};
@@ -103,20 +103,20 @@ static int probe_return_getpeername(void *ctx, int ret) {
   bpf_get_current_comm(&data.command, sizeof(data.command));
   data.type_id = 1;
   int err = bpf_probe_read_user(&data.addr, sizeof(data.addr), addr);
-  // bpf_map_update_elem(&raw_sockaddr, &pid, &data.addr, BPF_ANY);
+  //bpf_map_update_elem(&raw_sockaddr, &pid, &data.addr, BPF_ANY);
 
   int res = bpf_strncmp(data.command, 8, "sshd");
   if (!res) {
     bpf_map_update_elem(&raw_sockaddr, &pid, &data.addr, BPF_ANY);
     bpf_map_update_elem(&raw_user, &pid, &data.uid, BPF_ANY);
-    // bpf_printk("Command: %s , %s Res: %d",str1, data.command, res);
+    //bpf_printk("Updating: %d IP: %d", pid);
     bpf_perf_event_output(ctx, &output, BPF_F_CURRENT_CPU, &data, sizeof(data));
   }
 
   return 0;
 }
 
-static int probe_entry_getsockname(void *ctx, struct sockaddr *addr) {
+static int probe_entry_getsockname(void *ctx, struct sockaddr_in6 *addr) {
   __u64 id = bpf_get_current_pid_tgid();
   pid_t pid = id >> 32;
   pid_t tid = (__u32)id;
@@ -132,8 +132,8 @@ static int probe_return_getsockname(void *ctx, int ret) {
   uid_t uid = bpf_get_current_uid_gid() & 0xFFFFFFFF;
   //struct sockaddr_in **addrpp;
   //struct sockaddr_in *addr;
-  struct sockaddr **addrpp;
-  struct sockaddr *addr;
+  struct sockaddr_in6 **addrpp;
+  struct sockaddr_in6 *addr;
   struct data_t data = {};
 
   addrpp = bpf_map_lookup_elem(&values, &pid);
@@ -162,7 +162,7 @@ static int probe_return_getsockname(void *ctx, int ret) {
 SEC("tp/syscalls/sys_enter_getpeername")
 int tp_sys_enter_getpeername(struct trace_event_raw_sys_enter *ctx) {
   //return probe_entry_getpeername(ctx, (struct sockaddr_in *)ctx->args[1]);
-  return probe_entry_getpeername(ctx, (struct sockaddr*)ctx->args[1]);
+  return probe_entry_getpeername(ctx, (struct sockaddr_in6*)ctx->args[1]);
 }
 
 SEC("tp/syscalls/sys_exit_getpeername")
@@ -173,7 +173,7 @@ int tp_sys_exit_getpeername(struct trace_event_raw_sys_exit *ctx) {
 SEC("tp/syscalls/sys_enter_getsockname")
 int tp_sys_enter_getsockname(struct trace_event_raw_sys_enter *ctx) {
   //return probe_entry_getsockname(ctx, (struct sockaddr_in *)ctx->args[1]);
-  return probe_entry_getsockname(ctx, (struct sockaddr*)ctx->args[1]);
+  return probe_entry_getsockname(ctx, (struct sockaddr_in6*)ctx->args[1]);
 }
 
 SEC("tp/syscalls/sys_exit_getsockname")
@@ -282,6 +282,7 @@ int tracepoint__syscalls__sys_exit_execve(
   int ret;
   struct task_struct *task;
   pid_t ppid;
+
 
   struct data_t data = {}; // copy
   if (filter_cg && !bpf_current_task_under_cgroup(&cgroup_map, 0))
