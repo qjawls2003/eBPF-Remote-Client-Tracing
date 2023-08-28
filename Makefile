@@ -34,4 +34,4 @@ clean:
 	- rm $(BPF_OBJ)
 	- rm $(TARGET)
 	- rm $(USER_SKEL)
-	- sudo rm /sys/fs/bpf/raw_*
+	- sudo rm /sys/fs/bpf/*
