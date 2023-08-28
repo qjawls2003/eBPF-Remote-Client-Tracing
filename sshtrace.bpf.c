@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2023 Beom Jin An & Abe Melvin
+ */
+
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
@@ -23,6 +27,14 @@ struct {
   __uint(type, BPF_MAP_TYPE_HASH);
   __uint(max_entries, 10240);
   __type(key, pid_t);
+  __type(value, struct ipData);
+  __uint(pinning, LIBBPF_PIN_BY_NAME);
+} addresses SEC(".maps");
+
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, 10240);
+  __type(key, pid_t);
   __type(value, struct event);
   __uint(pinning, LIBBPF_PIN_BY_NAME);
 } execs SEC(".maps");
@@ -39,7 +51,7 @@ struct {
   __uint(type, BPF_MAP_TYPE_HASH);
   __uint(max_entries, 10240);
   __type(key, uint16_t);
-  __type(value, struct sockaddr_in6 *);
+  __type(value, struct ipData);
   __uint(pinning, LIBBPF_PIN_BY_NAME);
 } raw_port SEC(".maps");
 
@@ -66,7 +78,10 @@ struct {
   __uint(max_entries, 1);
 } cgroup_map SEC(".maps");
 
-
+struct ipData {
+  char ipAddress[46];
+  uint16_t port;
+};
 
 static int probe_entry_getpeername(void *ctx, struct sockaddr_in6 *addr) {
   __u64 id = bpf_get_current_pid_tgid();
@@ -150,7 +165,7 @@ static int probe_return_getsockname(void *ctx, int ret) {
   bpf_get_current_comm(&data.command, sizeof(data.command));
   data.type_id = 2;
   int err = bpf_probe_read_user(&data.addr, sizeof(data.addr), addr);
-  int res = bpf_strncmp(data.command, 3, "ssh");
+  int res = bpf_strncmp(data.command, 8, "ssh");
   if (!res) {
     // bpf_printk("Command: %s , %s Res: %d",str1, data.command, res);
     bpf_perf_event_output(ctx, &output, BPF_F_CURRENT_CPU, &data, sizeof(data));
