@@ -168,7 +168,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
   //struct sockaddr_in6 ip = {0};
   struct ipData sockData = {0};
   //char ipAddress[INET6_ADDRSTRLEN] = {0};
-  int sockaddrErr = 0;
+  int addrErr = 0;
   log_trace("Getting the sockaddr BPF map object");
   /*
   int sockaddrMap =
@@ -181,7 +181,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     log_trace("Ancestor sockaddr found (%s) with PID (%d)", m->command, ppid);
   } else {
     log_trace("Ancestor sockaddr not found (%s) with PID (%d)", m->command, ppid);
-    sockData = ipHelper(&m->addr);
+    ip = m->addr
   }
 */
   
@@ -206,6 +206,13 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
   if (addrMap <= 0) {
       log_trace("No file descriptor returned for the port BPF map object");
     }
+  addrErr = bpf_map_lookup_elem(addrMap, &m->ppid, &sockData);
+  if (!addrErr) {
+    log_trace("Ancestor sockaddr found (%s) with PID (%d)", m->command, m->ppid);
+  } else {
+    log_trace("Ancestor sockaddr not found (%s) with PID (%d)", m->command, m->ppid);
+    sockData = ipHelper(&m->addr);
+  }
 
   uint16_t port = 0;
   if (m->type_id == EXECVE) {
@@ -254,7 +261,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
       close(userMap);
       return;
     }
-    log_trace("Reporting %d as the originating PID and found: %d", sshdPID, sockaddrErr);
+    log_trace("Reporting %d as the originating PID and found: %d", sshdPID, addrErr);
     log_trace("Converting sockaddr_in to presentable IP address at %d", &sockData.ipAddress);
 
 
