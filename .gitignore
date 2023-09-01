@@ -2,4 +2,4 @@ loongarch
 powerpc
 riscv
 blazesym
-
+vmlinux.h
