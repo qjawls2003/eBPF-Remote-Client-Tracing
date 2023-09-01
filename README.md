@@ -1,5 +1,6 @@
 # eBPF-Remote-Client-Tracing
-**Description**: An eBPF agent to trace all execve syscall back to a SSH Client IP and port.
+**Description**: An eBPF agent to trace all execve syscall back to a SSH Client IP, port, and user.
+
 **Purpose**: This program will reduce the amount of manual tracing work when conducting forensics on suspicious user activities.
 
 This program allows you to *pin* attribution to all SSH clients. Once a client connects to the host, this program will attribute the client's original IP, port, and user to all command line and execve events.
