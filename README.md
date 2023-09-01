@@ -17,6 +17,12 @@ sudo ./sshtrace [-a] [-p] [-v] [-w] [-h]
 
 Linux Distrubtion with eBPF
 ```
-git clone https://github.com/qjawls2003/eBPF-Remote-Client-Tracing
+git clone --recurse-submodules https://github.com/qjawls2003/eBPF-Remote-Client-Tracing
+```
+If you want to make your own executable:
+```
+sudo apt-get install bpftool
+sudo apt-get install clang
+make
 ```
 
