@@ -1,3 +1,6 @@
 [submodule "log.c"]
 	path = log.c
 	url = https://github.com/rxi/log.c
+[submodule "bpftool"]
+	path = bpftool
+	url = https://github.com/libbpf/bpftool/tree/6eb3e20583da834da18ea3011dcefd08b3493f8d
