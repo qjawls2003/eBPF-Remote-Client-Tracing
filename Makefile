@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
 TARGET = sshtrace
 ARCH = $(shell uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm64/')
 

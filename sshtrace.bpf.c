@@ -89,7 +89,7 @@ struct ipData {
 static int probe_entry_getpeername(void *ctx, struct sockaddr_in6 *addr) {
   __u64 id = bpf_get_current_pid_tgid();
   pid_t pid = id >> 32;
-  pid_t tid = (__u32)id;
+  //pid_t tid = (__u32)id;
 
   bpf_map_update_elem(&values, &pid, &addr, BPF_ANY);
   return 0;
@@ -98,11 +98,9 @@ static int probe_entry_getpeername(void *ctx, struct sockaddr_in6 *addr) {
 static int probe_return_getpeername(void *ctx, int ret) {
   __u64 id = bpf_get_current_pid_tgid();
   pid_t pid = id >> 32;
-  pid_t tid = (__u32)id;
+  //pid_t tid = (__u32)id;
   uid_t uid = bpf_get_current_uid_gid() & 0xFFFFFFFF;
 
-  //struct sockaddr_in **addrpp;
-  //struct sockaddr_in *addr;
   struct sockaddr_in6 **addrpp;
 
   addrpp = bpf_map_lookup_elem(&values, &pid);
@@ -120,7 +118,7 @@ static int probe_return_getpeername(void *ctx, int ret) {
   data.ret = ret;
   bpf_get_current_comm(&data.command, sizeof(data.command));
   data.type_id = 1;
-  int err = bpf_probe_read_user(&data.addr, sizeof(data.addr), addr);
+  bpf_probe_read_user(&data.addr, sizeof(data.addr), addr);
   //bpf_map_update_elem(&raw_sockaddr, &pid, &data.addr, BPF_ANY);
 
   int res = bpf_strncmp(data.command, 8, "sshd");
@@ -137,7 +135,7 @@ static int probe_return_getpeername(void *ctx, int ret) {
 static int probe_entry_getsockname(void *ctx, struct sockaddr_in6 *addr) {
   __u64 id = bpf_get_current_pid_tgid();
   pid_t pid = id >> 32;
-  pid_t tid = (__u32)id;
+  //pid_t tid = (__u32)id;
 
   bpf_map_update_elem(&values, &pid, &addr, BPF_ANY);
   return 0;
@@ -146,7 +144,7 @@ static int probe_entry_getsockname(void *ctx, struct sockaddr_in6 *addr) {
 static int probe_return_getsockname(void *ctx, int ret) {
   __u64 id = bpf_get_current_pid_tgid();
   pid_t pid = id >> 32;
-  pid_t tid = (__u32)id;
+  //pid_t tid = (__u32)id;
   uid_t uid = bpf_get_current_uid_gid() & 0xFFFFFFFF;
   //struct sockaddr_in **addrpp;
   //struct sockaddr_in *addr;
@@ -167,7 +165,7 @@ static int probe_return_getsockname(void *ctx, int ret) {
   data.ret = ret;
   bpf_get_current_comm(&data.command, sizeof(data.command));
   data.type_id = 2;
-  int err = bpf_probe_read_user(&data.addr, sizeof(data.addr), addr);
+  bpf_probe_read_user(&data.addr, sizeof(data.addr), addr);
   int res = bpf_strncmp(data.command, 8, "ssh");
   if (!res) {
     // bpf_printk("Command: %s , %s Res: %d",str1, data.command, res);
@@ -202,7 +200,6 @@ int tp_sys_exit_getsockname(struct trace_event_raw_sys_exit *ctx) {
 const volatile bool filter_cg = false;
 const volatile bool ignore_failed = true;
 const volatile uid_t targ_uid = INVALID_UID;
-const volatile int max_args = DEFAULT_MAXARGS;
 
 static const struct event empty_event = {};
 
@@ -223,7 +220,6 @@ int tracepoint__syscalls__sys_enter_execve(
     return 0;
 
   uid_t uid = (u32)bpf_get_current_uid_gid();
-  int i;
   if (valid_uid(targ_uid) && targ_uid != uid)
     return 0;
   id = bpf_get_current_pid_tgid();
@@ -250,42 +246,12 @@ int tracepoint__syscalls__sys_enter_execve(
   if (ret <= ARGSIZE) {
     event->args_size += ret;
   } else {
-    /* write an empty string */
     event->args[0] = '\0';
     event->args_size++;
   }
   
   event->args_count++;
   //bpf_printk("Event...arg count: %d, arg: %s", event->args_count, event->args);
-
-/*
-#pragma unroll
-  for (i = 1; i < TOTAL_MAX_ARGS && i < max_args; i++) {
-    bpf_probe_read_user(&argp, sizeof(argp), &args[i]);
-    if (!argp)
-      return 0;
-
-    if (event->args_size > LAST_ARG)
-      return 0;
-
-    ret =
-        bpf_probe_read_user_str(&event->args[event->args_size], ARGSIZE, argp);
-    if (ret > ARGSIZE)
-      return 0;
-
-    event->args_count++;
-    event->args_size += ret;
-  }
-  */
-
-  /* try to read one more argument to check if there is one */
-  //bpf_probe_read_user(&argp, sizeof(argp), &args[max_args]);
-  //if (!argp)
-  //  return 0;
-
-  /* pointer to max_args+1 isn't null, assume we have more arguments */
-  //event.args_count++;
-  
   return 0;
 }
 
@@ -294,7 +260,7 @@ int tracepoint__syscalls__sys_exit_execve(
     struct trace_event_raw_sys_exit *ctx) {
 
   __u64 id = bpf_get_current_pid_tgid();
-  pid_t pid = id >> 32;
+  //pid_t pid = id >> 32;
   pid_t tid = (__u32)id;
 
   int ret;

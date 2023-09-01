@@ -32,49 +32,51 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
-
-#include "log.c/src/log.h"
 #include "sshtrace.h"
+#include "log.c/src/log.h"
 #include "sshtrace.skel.h"
 
 #define GETPEERNAME 1
 #define GETSOCKNAME 2
 #define EXECVE 3
 
-int count = 0;
-
 static int logLevel = LOG_INFO; // set desired logging level here
 
 volatile sig_atomic_t intSignal;
 
 const char *argp_program_version = "sshtrace 0.1";
-const char *argp_program_gh_address = "https://github.com/qjawls2003/eBPF-Remote-Client-Tracing";
+const char *argp_program_bug_address =
+    "https://github.com/qjawls2003/eBPF-Remote-Client-Tracing";
 const char argp_program_doc[] =
-"Trace ssh spawned execve syscall\n"
-"\n"
-"USAGE: sudo ./sshtrace [-p] [-v]\n"
+    "Trace ssh session spawned execve syscall\n"
+    "\n"
+    "USAGE: sudo ./sshtrace [-a] [-p] [-v] [-w] [-h]\n"
 
-"EXAMPLES:\n"
-"   ./sshtrace           # trace all ssh-spawned execve syscall\n"
-"   ./sshtrace -p        # printf all logs\n"
-"   ./sshtrace -v        # verbose debugging\n";
+    "EXAMPLES:\n"
+    "   ./sshtrace           # trace all ssh-spawned execve syscall\n"
+    "   ./sshtrace -a        # trace all execve syscalls\n"
+    "   ./sshtrace -p        # printf all logs\n"
+    "   ./sshtrace -v        # verbose events\n"
+    "   ./sshtrace -w        # verbose warnings\n"
+    "   ./sshtrace -h        # show help\n";
 
 static const struct argp_option opts[] = {
-	{ "print", 'p', NULL, 0, "printf all logs" },
-	{ "verbose", 'v', NULL, 0, "verbose debugging" },
-	{},
+    {"all", 'a', NULL, 0, "trace all execve syscall"},
+    {"print", 'p', NULL, 0, "printf all logs"},
+    {"verbose", 'v', NULL, 0, "verbose debugging"},
+    {"warning", 'w', NULL, 0, "verbose warnings"},
+    {NULL, 'h', NULL, OPTION_HIDDEN, "Show the full help"},
+    {},
 };
 
-
-FILE *fp; //Save logs to File
+FILE *fp; // Save logs to File
 
 static struct envVar {
   bool print;
   bool verbose;
-} envVar = {
-  .print = false,
-  .verbose = false
-};
+  bool warning;
+  bool all;
+} envVar = {.print = false, .verbose = false, .warning = false, .all = false};
 
 void intHandler(int signal) {
   log_trace("Received interrupt signal, exiting");
@@ -99,17 +101,19 @@ struct ipData ipHelper(struct sockaddr_in6 *ipRaw) {
   struct ipData ipRes = {0};
   switch (ipRaw->sin6_family) {
   case AF_INET: { // IPv4
-    struct sockaddr_in * ip = (struct sockaddr_in *)ipRaw;
+    struct sockaddr_in *ip = (struct sockaddr_in *)ipRaw;
     inet_ntop(AF_INET, &(ip->sin_addr), ipRes.ipAddress, INET_ADDRSTRLEN);
     ipRes.port = htons(ip->sin_port);
-    log_trace("Converting sockaddr to IPv4 address Successful: %s %d", ipRes.ipAddress,ipRes.port);
+    log_trace("Converting sockaddr to IPv4 address Successful: %s %d",
+              ipRes.ipAddress, ipRes.port);
     return ipRes;
   }
   case AF_INET6: { // IPv6
-    struct sockaddr_in6 * ip6 = (struct sockaddr_in6 *)ipRaw;
+    struct sockaddr_in6 *ip6 = (struct sockaddr_in6 *)ipRaw;
     inet_ntop(AF_INET6, &(ip6->sin6_addr), ipRes.ipAddress, INET6_ADDRSTRLEN);
     ipRes.port = htons(ip6->sin6_port);
-    log_trace("Converting sockaddr to IPv6 address Successful: %s %d", ipRes.ipAddress,ipRes.port);
+    log_trace("Converting sockaddr to IPv6 address Successful: %s %d",
+              ipRes.ipAddress, ipRes.port);
     return ipRes;
   }
   default:
@@ -127,7 +131,7 @@ char *getUser(uid_t uid) {
   char *user = (char *)malloc(bufferSize);
   struct passwd *pwd = getpwuid(uid);
   if (pwd == NULL) {
-    log_trace("Unable to find username for UID %d", uid);
+    log_debug("Unable to find username for UID %d", uid);
     char tmp[3] = "n/a";
     strcpy(user, tmp);
   } else {
@@ -144,7 +148,7 @@ pid_t getPPID(pid_t pid) {
   sprintf(file, "/proc/%d/stat", pid);
   FILE *f = fopen(file, "r");
   if (f == NULL) {
-    log_trace("Failed to open %s, returning default PID 1", file);
+    log_debug("Failed to open %s, returning default PID 1", file);
     return ppid;
   }
   fscanf(f, "%*d %*s %*c %d", &ppid);
@@ -160,7 +164,7 @@ char *getCommand(pid_t pid) {
   sprintf(file, "/proc/%d/stat", pid);
   FILE *f = fopen(file, "r");
   if (f == NULL) {
-    log_trace("Failed to open %s, returning empty command", file);
+    log_debug("Failed to open %s, returning empty command", file);
     return comm;
   }
   fscanf(f, "%*d %s %*c %*d", comm);
@@ -180,7 +184,7 @@ uid_t getUID(pid_t pid) {
   sprintf(file, "/proc/%d/status", pid);
   FILE *f = fopen(file, "r");
   if (f == NULL) {
-    log_warn("Failed to open %s, returning empty UID", file);
+    log_debug("Failed to open %s, returning empty UID", file);
     return uid;
   }
   char tmp[256];
@@ -196,27 +200,25 @@ uid_t getUID(pid_t pid) {
 
 void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
   log_trace("%s", "Entering handle_event()");
-  count++;
   struct data_t *m = data;
   struct ipData sockData = ipHelper(&m->addr);
-  
-  //timestamp
+
+  // timestamp
   time_t t;
-	struct tm *tm;
-	char ts[64];
+  struct tm *tm;
+  char ts[64];
   time(&t);
-	tm = localtime(&t);
-	//strftime(ts, sizeof(ts), "%H:%M:%S", tm);
+  tm = localtime(&t);
+  // strftime(ts, sizeof(ts), "%H:%M:%S", tm);
   strftime(ts, sizeof(ts), "%c", tm);
 
-
-  int addrErr; 
+  int addrErr;
   int userErr;
   uid_t org_user;
   log_trace("%s", "Getting the user BPF map object");
   int userMap = bpf_obj_get("/sys/fs/bpf/raw_user"); // BASH PID -> user #Map3
   if (userMap <= 0) {
-    log_trace("%s", "No file descriptor returned for the user BPF map object");
+    log_debug("%s", "No file descriptor returned for the user BPF map object");
   } else {
     log_trace("Looking up PPID %d in the user BPF map", m->ppid);
     userErr = bpf_map_lookup_elem(userMap, &m->ppid, &org_user);
@@ -230,13 +232,15 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
 
   int addrMap = bpf_obj_get("/sys/fs/bpf/addresses"); // pid -> IP data
   if (addrMap <= 0) {
-      log_trace("No file descriptor returned for the port BPF map object");
-    }
+    log_debug("No file descriptor returned for the port BPF map object");
+  }
   addrErr = bpf_map_lookup_elem(addrMap, &m->ppid, &sockData);
   if (!addrErr) {
-    log_trace("Ancestor sockaddr found (%s) with PID (%d)", m->command, m->ppid);
+    log_trace("Ancestor sockaddr found (%s) with PID (%d)", m->command,
+              m->ppid);
   } else {
-    log_trace("Ancestor sockaddr not found (%s) with PID (%d)", m->command, m->ppid);
+    log_trace("Ancestor sockaddr not found (%s) with PID (%d)", m->command,
+              m->ppid);
     sockData = ipHelper(&m->addr);
   }
 
@@ -266,8 +270,8 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
         log_trace("Looking up PID %d in the sockaddr BPF map", sshdPID);
         userErr = bpf_map_lookup_elem(userMap, &sshdPID,
                                       &org_user); // update org_user
-        addrErr = bpf_map_lookup_elem(addrMap, &sshdPID, 
-                                      &sockData); //update IP data
+        addrErr = bpf_map_lookup_elem(addrMap, &sshdPID,
+                                      &sockData); // update IP data
         if (addrErr != 0) {
           log_trace(
               "Couldn't find a corresponding sockaddr_in for the sshd process");
@@ -278,22 +282,22 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
       }
       ppid = ancestorPID;
     }
-    
+
     if (addrMap) {
-      bpf_map_update_elem(
-            addrMap, &m->pid, &sockData,
-            BPF_ANY);
+      bpf_map_update_elem(addrMap, &m->pid, &sockData, BPF_ANY);
     }
 
     free(comm);
-    if (sshdFound == false) {
+    if (sshdFound == false && !envVar.all) {
       close(addrErr);
       close(userMap);
       return;
     }
-    log_trace("Reporting %d as the originating PID and found: %d", sshdPID, addrErr);
-    log_trace("Converting sockaddr_in to presentable IP address at %s", sockData.ipAddress);
-   
+    log_trace("Reporting %d as the originating PID and found: %d", sshdPID,
+              addrErr);
+    log_trace("Converting sockaddr_in to presentable IP address at %s",
+              sockData.ipAddress);
+
     char *originalUser;
     if (userErr == 0) {
       originalUser = getUser(org_user);
@@ -303,42 +307,47 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
       originalUser = getUser(originalUID);
       log_trace("OriginalUser not found, use currentUser, %s", originalUser);
     }
-  char *currentUser = getUser(m->uid);
-  struct event eventArg;
-  int eventErr;
-  int eventMap = bpf_obj_get("/sys/fs/bpf/execs"); // event for args
-  if (eventMap <= 0) {
-    log_trace("%s", "No file descriptor returned for the user BPF map object");
-  } else {
-    eventErr = bpf_map_lookup_elem(eventMap, &m->pid, &eventArg);
-    if (eventErr==0) {
-      log_trace("Looked up ARGs '%d' in the event BPF map", eventArg.pid);
+    char *currentUser = getUser(m->uid);
+    struct event eventArg;
+    int eventErr;
+    int eventMap = bpf_obj_get("/sys/fs/bpf/execs"); // event for args
+    if (eventMap <= 0) {
+      log_trace("%s",
+                "No file descriptor returned for the user BPF map object");
     } else {
-      log_trace("No Event returned for %d, instead got: %d",m->pid, eventArg.pid);
+      eventErr = bpf_map_lookup_elem(eventMap, &m->pid, &eventArg);
+      if (eventErr == 0) {
+        log_trace("Looked up ARGs '%d' in the event BPF map", eventArg.pid);
+      } else {
+        log_trace("No Event returned for %d, instead got: %d", m->pid,
+                  eventArg.pid);
+      }
     }
-  }
 
-  fprintf(fp,"{timestamp:%s, pid:%-6d, ppid:%d, uid:%d, currentUser:%s, originalUser:%s, command:%s ip:%s, port:%d, execPath:%s}\n", ts, m->pid, m->ppid,
-           m->uid, currentUser, originalUser, m->command, sockData.ipAddress, sockData.port,eventArg.args);
-  if (envVar.print) {
-    printf("%-8s %-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d %-6s\n", ts, m->pid, m->ppid,
-           m->uid, currentUser, originalUser, m->command, sockData.ipAddress, sockData.port,eventArg.args);
-  }
+    fprintf(fp,
+            "{timestamp:%s,pid:%d,ppid:%d,uid:%d,currentUser:%s,"
+            "originalUser:%s,command:%s,ip:%s,port:%d,execPath:%s}\n",
+            ts, m->pid, m->ppid, m->uid, currentUser, originalUser, m->command,
+            sockData.ipAddress, sockData.port, eventArg.args);
+    if (envVar.print) {
+      printf("%-8s %-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d %-6s\n", ts,
+             m->pid, m->ppid, m->uid, currentUser, originalUser, m->command,
+             sockData.ipAddress, sockData.port, eventArg.args);
+    }
     free(currentUser);
     free(originalUser);
-
 
   } else if (m->type_id == GETPEERNAME) {
     struct ipData ipRes = ipHelper(&m->addr);
 
     if (addrMap) {
-      bpf_map_update_elem(
-            addrMap, &m->pid, &ipRes,
-            BPF_ANY);
+      bpf_map_update_elem(addrMap, &m->pid, &ipRes, BPF_ANY);
     }
-    
-    log_trace("Converting sockaddr to IP address succeeded: %s for PID: %d", ipRes.ipAddress, m->pid);
-    if (!strncmp(ipRes.ipAddress, "127.0.0.1", INET_ADDRSTRLEN) || !strncmp(ipRes.ipAddress, "::1", INET6_ADDRSTRLEN)) {
+
+    log_trace("Converting sockaddr to IP address succeeded: %s for PID: %d",
+              ipRes.ipAddress, m->pid);
+    if (!strncmp(ipRes.ipAddress, "127.0.0.1", INET_ADDRSTRLEN) ||
+        !strncmp(ipRes.ipAddress, "::1", INET6_ADDRSTRLEN)) {
       log_trace("Client IP address is localhost");
       struct ipData tmpSockData;
       uid_t originalUser;
@@ -346,27 +355,24 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
       int portMap = bpf_obj_get("/sys/fs/bpf/raw_port"); // BASH port -> IP
                                                          // #Map2
       if (portMap <= 0) {
-        log_trace("No file descriptor returned for the port BPF map object");
+        log_debug("No file descriptor returned for the port BPF map object");
       }
       log_trace("Getting the userport BPF map object");
       int userportMap =
           bpf_obj_get("/sys/fs/bpf/raw_userport"); // BASH port -> IP #Map2
       if (userportMap <= 0) {
-        log_trace(
+        log_debug(
             "No file descriptor returned for the userport BPF map object");
       }
       if (portMap && userportMap) {
         log_trace("Looking up the sockaddr_in corresponding to port %d in the "
                   "port map",
                   port);
-        bpf_map_lookup_elem(
-            portMap, &ipRes.port,
-            &tmpSockData); // port -> IP data
+        bpf_map_lookup_elem(portMap, &ipRes.port,
+                            &tmpSockData); // port -> IP data
 
-          //update with the previous ssh IP data
-          bpf_map_update_elem(
-                addrMap, &m->pid, &tmpSockData,
-                BPF_ANY);
+        // update with the previous ssh IP data
+        bpf_map_update_elem(addrMap, &m->pid, &tmpSockData, BPF_ANY);
 
         bpf_map_lookup_elem(userportMap, &ipRes.port, &originalUser); //
         log_trace("Updating the user corresponding to PID %d in the user map",
@@ -378,10 +384,12 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     }
 
   } else if (m->type_id == GETSOCKNAME) {
-    struct ipData ipRes = ipHelper(&m->addr); //must be m->addr 
-   
-    log_trace("Converting sockaddr to IP address succeeded: %s", ipRes.ipAddress);
-    if (!strncmp(ipRes.ipAddress, "127.0.0.1", INET_ADDRSTRLEN) || !strncmp(ipRes.ipAddress, "::1", INET6_ADDRSTRLEN)) {
+    struct ipData ipRes = ipHelper(&m->addr); // must be m->addr
+
+    log_trace("Converting sockaddr to IP address succeeded: %s",
+              ipRes.ipAddress);
+    if (!strncmp(ipRes.ipAddress, "127.0.0.1", INET_ADDRSTRLEN) ||
+        !strncmp(ipRes.ipAddress, "::1", INET6_ADDRSTRLEN)) {
       log_trace("Your IP address is localhost");
       int map_port =
           bpf_obj_get("/sys/fs/bpf/raw_port"); // BASH port -> IP #Map2
@@ -396,7 +404,8 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
           if (sockData.port == 0) {
             sockData = ipRes;
           }
-          log_trace("Found sockaddr_in for PID %d with IP: %s", m->ppid,sockData.ipAddress);
+          log_trace("Found sockaddr_in for PID %d with IP: %s", m->ppid,
+                    sockData.ipAddress);
         } else {
           log_trace("Could not find sockaddr_in for PID %d", m->ppid);
           sockData = ipRes;
@@ -404,21 +413,23 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
         bpf_map_update_elem(
             map_port, &ipRes.port, &sockData,
             BPF_ANY); // update Map2 with Port -> ip (sockaddr_in)
-        log_trace("Updating the UID %d corresponding to port %d Command: %s", org_user,
-                  ipRes.port, m->command);
+        log_trace("Updating the UID %d corresponding to port %d Command: %s",
+                  org_user, ipRes.port, m->command);
         bpf_map_update_elem(userMapport, &ipRes.port, &org_user,
                             BPF_ANY); // update Map3 with Port -> org_user
+      } else {
+        log_debug("Port maps file decriptors not found");
       }
 
       close(userMapport);
       close(map_port);
     }
-  } else { 
-    //all non-ssh spawned commands
-
+  } else {
+    // no events passed here
+    printf("Unexpected events sent");
   }
 
-  //close(sockaddrMap);
+  // close(sockaddrMap);
   close(userMap);
   log_trace("Exiting handle_event()");
 }
@@ -427,44 +438,50 @@ void lost_event(void *ctx, int cpu, long long unsigned int data_sz) {
   printf("lost event\n");
 }
 
-
 static int parse_arg(int key, char *arg, struct argp_state *state) {
   switch (key) {
-    case 'p':
-      envVar.print = true;
-      break;
-    case 'v':
-      envVar.verbose = true;
-      break;
+  case 'p':
+    envVar.print = true;
+    break;
+  case 'v':
+    envVar.verbose = true;
+    logLevel = LOG_TRACE;
+    break;
+  case 'a':
+    envVar.all = true;
+    break;
+  case 'w':
+    envVar.warning = true;
+    logLevel = LOG_DEBUG;
+    break;
+  case 'h':
+    argp_state_help(state, stderr, ARGP_HELP_STD_HELP);
+    break;
   }
   return 0;
 }
 
-
 int main(int argc, char **argv) {
-  
-  log_trace("%s", "Starting program...");
-  	static const struct argp argp = {
-		.options = opts,
-		.parser = parse_arg,
-		.doc = argp_program_doc,
-	};
+
+  static const struct argp argp = {
+      .options = opts,
+      .parser = parse_arg,
+      .doc = argp_program_doc,
+  };
   int argErr = argp_parse(&argp, argc, argv, 0, NULL, NULL);
-	if (argErr)
-		return argErr;
-  if (envVar.verbose) {
-    logLevel = LOG_TRACE;
-  }
+  if (argErr)
+    return argErr;
+  log_info("%s", "Starting program...");
   log_set_level(logLevel);
   if (envVar.print) {
-    printf("%-8s %-6s %-6s %-6s %-16s %-16s %-16s %-16s %-16s %-6s\n", "TIME", "PID", "PPID", "UID",
-         "Current User", "Origin User", "Command", "IP Address", "Port", "BinPath");
+    printf("%-24s %-6s %-6s %-6s %-16s %-16s %-16s %-16s %-16s %-6s\n", "Timestamp",
+           "PID", "PPID", "UID", "Current User", "Origin User", "Command",
+           "IP Address", "Port", "BinPath");
   }
 
-
-  fp = fopen("/var/log/sshtrace.log", "a"); //open file
-  if (fp==NULL) {
-    log_warn("Log file could not be created or opened");
+  fp = fopen("/var/log/sshtrace.log", "a"); // open file
+  if (fp == NULL) {
+    log_trace("Log file could not be created or opened");
     return -1;
   }
   log_trace("%s", "Setting LIBBPF options");
@@ -476,7 +493,7 @@ int main(int argc, char **argv) {
   log_trace("%s", "Opening BPF skeleton object");
   struct sshtrace_bpf *skel = sshtrace_bpf__open_opts(&opts);
   if (!skel) {
-    log_error("%s", "Error while opening BPF skeleton object");
+    log_trace("%s", "Error while opening BPF skeleton object");
     return EXIT_FAILURE;
   }
 
@@ -484,26 +501,24 @@ int main(int argc, char **argv) {
 
   log_trace("%s", "Loading BPF skeleton object");
   err = sshtrace_bpf__load(skel);
-    	// Print the verifier log
+  // Print the verifier log
   /*
-	for (int i=0; i < 10000; i++) {
-		if (log_buf[i] == 0 && log_buf[i+1] == 0) {
-			break;
-		}
-		printf("%c", log_buf[i]);
-	}
+        for (int i=0; i < 10000; i++) {
+                if (log_buf[i] == 0 && log_buf[i+1] == 0) {
+                        break;
+                }
+                printf("%c", log_buf[i]);
+        }
   */
   if (err) {
-    log_error("%s", "Error while loading BPF skeleton object");
+    log_trace("%s", "Error while loading BPF skeleton object");
     goto cleanup;
   }
-
-
 
   log_trace("%s", "Attaching BPF skeleton object");
   err = sshtrace_bpf__attach(skel);
   if (err) {
-    log_error("%s", "Error while attaching BPF skeleton object");
+    log_trace("%s", "Error while attaching BPF skeleton object");
     goto cleanup;
   }
 
@@ -511,7 +526,7 @@ int main(int argc, char **argv) {
   struct perf_buffer *pb = perf_buffer__new(
       bpf_map__fd(skel->maps.output), 8, handle_event, lost_event, NULL, NULL);
   if (!pb) {
-    log_error("%s", "Error while initializing perf buffer");
+    log_trace("%s", "Error while initializing perf buffer");
     goto cleanup;
   }
 
