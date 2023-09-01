@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
 /*
  * Copyright (c) 2023 Beom Jin An & Abe Melvin
  */
@@ -9,6 +10,8 @@
 #include <bpf/bpf_endian.h>
 #include <string.h>
 #include "sshtrace.h"
+
+char LICENSE[] SEC("license") = "Dual BSD/GPL";
 
 struct {
   __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
@@ -333,4 +336,4 @@ cleanup:
   return 0;
 }
 
-char LICENSE[] SEC("license") = "Dual BSD/GPL";
+
