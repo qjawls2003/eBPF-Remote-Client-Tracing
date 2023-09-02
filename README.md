@@ -64,5 +64,8 @@ Use the *-p* arg to print out the logs:
 ```
 sudo ./sshtrace -p
 ```
+### IPv4
 ![ssh_1](https://github.com/qjawls2003/eBPF-Remote-Client-Tracing/assets/35247051/b326e22a-7ac5-4f98-9535-d18f6d5b02c2)
 
+### IPv6
+![ssh_3](https://github.com/qjawls2003/eBPF-Remote-Client-Tracing/assets/35247051/b7bb856a-b762-498f-b2a3-da6df836dc1b)
