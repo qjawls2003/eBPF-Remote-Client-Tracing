@@ -3,7 +3,7 @@
  * Copyright (c) 2023 Beom Jin An & Abe Melvin
  *
  * 2023-09-01 Beom Jin An and Abe Melvin  Created this.
- * sshtrace   Trace execve spawned from ssh sessions
+ * sshtrace   Trace execve called from ssh client activity
  */
 
 #define _POSIX_SOURCE
@@ -196,9 +196,8 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
   time_t t;
   struct tm *tm;
   char ts[64];
-  time(&t);
+  t = time(NULL);
   tm = localtime(&t);
-  // strftime(ts, sizeof(ts), "%H:%M:%S", tm);
   strftime(ts, sizeof(ts), "%c", tm);
 
   int addrErr;
@@ -314,9 +313,9 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     }
 
     fprintf(fp,
-            "{timestamp:%s,pid:%d,ppid:%d,uid:%d,currentUser:%s,"
+            "{timestamp:%ld,pid:%d,ppid:%d,uid:%d,currentUser:%s,"
             "originalUser:%s,command:%s,ip:%s,port:%d,execPath:%s}\n",
-            ts, m->pid, m->ppid, m->uid, currentUser, originalUser, m->command,
+            t, m->pid, m->ppid, m->uid, currentUser, originalUser, m->command,
             sockData.ipAddress, sockData.port, eventArg.args);
     if (envVar.print) {
       printf("%-8s %-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d %-6s\n", ts,
