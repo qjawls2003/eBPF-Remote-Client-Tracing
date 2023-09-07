@@ -204,7 +204,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
   int userErr;
   uid_t org_user;
   log_trace("%s", "Getting the user BPF map object");
-  int userMap = bpf_obj_get("/sys/fs/bpf/raw_user"); // BASH PID -> user #Map3
+  int userMap = bpf_obj_get("/sys/fs/bpf/raw_user"); // PID -> user 
   if (userMap <= 0) {
     log_debug("%s", "No file descriptor returned for the user BPF map object");
   } else {
@@ -257,9 +257,9 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
         sshdPID = ppid;
         log_trace("Looking up PID %d in the sockaddr BPF map", sshdPID);
         userErr = bpf_map_lookup_elem(userMap, &sshdPID,
-                                      &org_user); // update org_user
+                                      &org_user); // look up org_user
         addrErr = bpf_map_lookup_elem(addrMap, &sshdPID,
-                                      &sockData); // update IP data
+                                      &sockData); // look up IP data
         if (addrErr != 0) {
           log_trace(
               "Couldn't find a corresponding sockaddr_in for the sshd process");
@@ -298,7 +298,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     char *currentUser = getUser(m->uid);
     struct event eventArg;
     int eventErr;
-    int eventMap = bpf_obj_get("/sys/fs/bpf/execs"); // event for args
+    int eventMap = bpf_obj_get("/sys/fs/bpf/execs"); // event for binary path
     if (eventMap <= 0) {
       log_trace("%s",
                 "No file descriptor returned for the user BPF map object");
@@ -322,8 +322,8 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
              m->pid, m->ppid, m->uid, currentUser, originalUser, m->command,
              sockData.ipAddress, sockData.port, eventArg.args);
     }
-    free(currentUser);
-    free(originalUser);
+    //free(currentUser);
+    //free(originalUser);
 
   } else if (m->type_id == GETPEERNAME) {
     struct ipData ipRes = ipHelper(&m->addr);
@@ -356,19 +356,17 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
         log_trace("Looking up the sockaddr_in corresponding to port %d in the "
                   "port map",
                   port);
-        bpf_map_lookup_elem(portMap, &ipRes.port,
-                            &tmpSockData); // port -> IP data
-
-        // update with the previous ssh IP data
-        bpf_map_update_elem(addrMap, &m->pid, &tmpSockData, BPF_ANY);
-
-        bpf_map_lookup_elem(userportMap, &ipRes.port, &originalUser); //
-        log_trace("Updating the user corresponding to PID %d in the user map",
-                  m->pid);
+        // look up port to get original IP data
+        bpf_map_lookup_elem(portMap, &ipRes.port, &tmpSockData);
+        // look up port to get original user
+        bpf_map_lookup_elem(userportMap, &ipRes.port, &originalUser);
+        // update PID with original user
         bpf_map_update_elem(userMap, &m->pid, &originalUser, BPF_ANY);
+        // update PID with the original ssh IP data
+        bpf_map_update_elem(addrMap, &m->pid, &tmpSockData, BPF_ANY);
       }
-      close(portMap);
-      close(userportMap);
+      //close(portMap);
+      //close(userportMap);
     }
 
   } else if (m->type_id == GETSOCKNAME) {
@@ -409,8 +407,8 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
         log_debug("Port maps file decriptors not found");
       }
 
-      close(userMapport);
-      close(map_port);
+      //close(userMapport);
+      //close(map_port);
     }
   } else {
     // no events passed here
@@ -418,7 +416,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
   }
 
   // close(sockaddrMap);
-  close(userMap);
+  //close(userMap);
   log_trace("Exiting handle_event()");
 }
 
@@ -462,9 +460,9 @@ int main(int argc, char **argv) {
   log_info("%s", "Starting program...");
   log_set_level(logLevel);
   if (envVar.print) {
-    printf("%-24s %-6s %-6s %-6s %-16s %-16s %-16s %-16s %-16s %-6s\n", "Timestamp",
-           "PID", "PPID", "UID", "Current User", "Origin User", "Command",
-           "IP Address", "Port", "BinPath");
+    printf("%-24s %-6s %-6s %-6s %-16s %-16s %-16s %-16s %-16s %-6s\n",
+           "Timestamp", "PID", "PPID", "UID", "Current User", "Origin User",
+           "Command", "IP Address", "Port", "BinPath");
   }
 
   fp = fopen("/var/log/sshtrace.log", "a"); // open file
