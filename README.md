@@ -56,7 +56,7 @@ The logs are generated in a JSON format (not JSON object).
 ```
 /var/log/sshtrace.log
 ```
-![ssh_2](https://github.com/qjawls2003/eBPF-Remote-Client-Tracing/assets/35247051/3431deea-7363-46cd-9a02-05600919c2bd)
+![ssh_4](https://github.com/qjawls2003/eBPF-Remote-Client-Tracing/assets/35247051/6241c4f9-4a5d-4ce4-b523-7f323e153411)
 
 ## Monitoring
 
