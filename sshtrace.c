@@ -81,6 +81,23 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
   return vfprintf(stderr, format, args);
 }
 
+typedef struct {
+  
+  //"{\"timestamp\":%ld,\"pid\":%d,\"ppid\":%d,\"uid\":%d,\"currentUser\":\"%s\",\"originalUser\":\"%s\",\"command\":\"%s\",\"ip\":\"%s\",\"port\":%d,\"execPath\":\"%s\"}\n",
+  
+ long int timestamp;
+ int pid;
+ int ppid;
+ int uid;
+ char *currentUser;
+ char *originalUser;
+ char *command;
+ char *ip;
+ int port;
+ char* execPath;
+} logJSON;
+
+
 struct ipData {
   char ipAddress[INET6_ADDRSTRLEN];
   uint16_t port;
@@ -311,12 +328,33 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
                   eventArg.pid);
       }
     }
+    //build pre-JSON struct
+    /*
+    logJSON logEntry = {
+      .timestamp = t,
+      .pid = m->pid,
+      .ppid = m->ppid,
+      .uid = m->uid,
+      .currentUser = currentUser,
+      .originalUser = originalUser,
+      .command = m->command,
+      .ip = sockData.ipAddress,
+      .port = sockData.port,
+      .execPath = eventArg.args
+    };
+    */
 
     fprintf(fp,
+            "{\"timestamp\":%ld,\"pid\":%d,\"ppid\":%d,\"uid\":%d,\"currentUser\":\"%s\",\"originalUser\":\"%s\",\"command\":\"%s\",\"ip\":\"%s\",\"port\":%d,\"execPath\":\"%s\"}\n",
+            t, m->pid, m->ppid, m->uid, currentUser, originalUser, m->command,
+            sockData.ipAddress, sockData.port, eventArg.args);
+        /*
+        fprintf(fp,
             "{timestamp:%ld,pid:%d,ppid:%d,uid:%d,currentUser:%s,"
             "originalUser:%s,command:%s,ip:%s,port:%d,execPath:%s}\n",
             t, m->pid, m->ppid, m->uid, currentUser, originalUser, m->command,
             sockData.ipAddress, sockData.port, eventArg.args);
+            */
     if (envVar.print) {
       printf("%-8s %-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d %-6s\n", ts,
              m->pid, m->ppid, m->uid, currentUser, originalUser, m->command,
