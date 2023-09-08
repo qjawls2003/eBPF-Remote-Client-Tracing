@@ -346,12 +346,16 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
       }
     }
     char *args_log = print_args(eventArg);
+    if (fp == NULL) {
+        log_info("Log file could not be opened");
+    }
     fprintf(fp,
             "{\"timestamp\":%ld,\"pid\":%d,\"ppid\":%d,\"uid\":%d,"
             "\"currentUser\":\"%s\",\"originalUser\":\"%s\",\"command\":\"%s\","
             "\"ip\":\"%s\",\"port\":%d,\"commargs\":\"%s\"}\n",
             t, m->pid, m->ppid, m->uid, currentUser, originalUser, m->command,
             sockData.ipAddress, sockData.port, args_log);
+    fflush(fp);
     if (envVar.print) {
       printf("%-8s %-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d %-6s\n", ts,
              m->pid, m->ppid, m->uid, currentUser, originalUser, m->command,
@@ -517,7 +521,7 @@ int main(int argc, char **argv) {
 
   fp = fopen("/var/log/sshtrace.log", "a"); // open file
   if (fp == NULL) {
-    log_trace("Log file could not be created or opened");
+    log_info("Log file could not be created or opened");
     return -1;
   }
   log_trace("%s", "Setting LIBBPF options");
