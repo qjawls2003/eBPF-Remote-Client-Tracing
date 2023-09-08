@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
+// GNU General Public License
 /*
  * Copyright (c) 2023 Beom Jin An & Abe Melvin
  *
