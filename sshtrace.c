@@ -28,6 +28,7 @@
 #define GETPEERNAME 1
 #define GETSOCKNAME 2
 #define EXECVE 3
+#define MAX_ARGS_KEY 259
 
 static int logLevel = LOG_INFO; // set desired logging level here
 
@@ -54,6 +55,8 @@ static const struct argp_option opts[] = {
     {"print", 'p', NULL, 0, "printf all logs"},
     {"verbose", 'v', NULL, 0, "verbose debugging"},
     {"warning", 'w', NULL, 0, "verbose warnings"},
+    { "max-args", MAX_ARGS_KEY, "MAX_ARGS", 0,
+		"max number of arg param logged, defaults to 20" },
     {NULL, 'h', NULL, OPTION_HIDDEN, "Show the full help"},
     {},
 };
@@ -65,7 +68,10 @@ static struct envVar {
   bool verbose;
   bool warning;
   bool all;
-} envVar = {.print = false, .verbose = false, .warning = false, .all = false};
+  int max_args;
+} envVar = {.print = false, .verbose = false, .warning = false, .all = false,
+  .max_args = DEFAULT_MAXARGS
+};
 
 void intHandler(int signal) {
   log_trace("Received interrupt signal, exiting");
@@ -109,6 +115,34 @@ struct ipData ipHelper(struct sockaddr_in6 *ipRaw) {
     log_trace("Converting sockaddr_in to IP address Not Successful");
     return ipRes;
   }
+}
+
+char * print_args(const struct event e)
+{
+	int i, args_counter = 0;
+  char * args = malloc(envVar.max_args);
+  args[0] = '\0';
+  int len;
+	for (i = 0; i < e.args_size && args_counter < e.args_count; i++) {
+    len = strlen(args);
+		char c = e.args[i];
+
+			if (c == '\0') {
+				args_counter++;
+				args[len] = ' ';
+        args[len+1] = '\0';
+        //putchar(' ');
+			} else {
+				args[len] = c;
+        args[len+1] = '\0';
+        //putchar(c);
+			}
+  
+	}
+  len = strlen(args);
+  args[len+1] = '\0';
+  //printf("%s\n",args);
+  return args;
 }
 
 char *getUser(uid_t uid) {
@@ -311,20 +345,21 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
                   eventArg.pid);
       }
     }
-
+    char *args_log = print_args(eventArg);
     fprintf(fp,
             "{\"timestamp\":%ld,\"pid\":%d,\"ppid\":%d,\"uid\":%d,"
             "\"currentUser\":\"%s\",\"originalUser\":\"%s\",\"command\":\"%s\","
-            "\"ip\":\"%s\",\"port\":%d,\"execPath\":\"%s\"}\n",
+            "\"ip\":\"%s\",\"port\":%d,\"commargs\":\"%s\"}\n",
             t, m->pid, m->ppid, m->uid, currentUser, originalUser, m->command,
-            sockData.ipAddress, sockData.port, eventArg.args);
+            sockData.ipAddress, sockData.port, args_log);
     if (envVar.print) {
       printf("%-8s %-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d %-6s\n", ts,
              m->pid, m->ppid, m->uid, currentUser, originalUser, m->command,
-             sockData.ipAddress, sockData.port, eventArg.args);
+             sockData.ipAddress, sockData.port, args_log);
     }
     //free(currentUser);
     //free(originalUser);
+    free(args_log);
 
   } else if (m->type_id == GETPEERNAME) {
     struct ipData ipRes = ipHelper(&m->addr);
@@ -426,6 +461,7 @@ void lost_event(void *ctx, int cpu, long long unsigned int data_sz) {
 }
 
 static int parse_arg(int key, char *arg, struct argp_state *state) {
+  long int max_args;
   switch (key) {
   case 'p':
     envVar.print = true;
@@ -444,9 +480,22 @@ static int parse_arg(int key, char *arg, struct argp_state *state) {
   case 'h':
     argp_state_help(state, stderr, ARGP_HELP_STD_HELP);
     break;
+  case MAX_ARGS_KEY:
+		errno = 0;
+		max_args = strtol(arg, NULL, 10);
+		if (errno || max_args < 1 || max_args > TOTAL_MAX_ARGS) {
+			fprintf(stderr, "Invalid MAX_ARGS %s, should be in [1, %d] range\n",
+					arg, TOTAL_MAX_ARGS);
+
+			argp_usage(state);
+		}
+		envVar.max_args = max_args;
+		break;
   }
   return 0;
 }
+
+
 
 int main(int argc, char **argv) {
 
@@ -463,7 +512,7 @@ int main(int argc, char **argv) {
   if (envVar.print) {
     printf("%-24s %-6s %-6s %-6s %-16s %-16s %-16s %-16s %-16s %-6s\n",
            "Timestamp", "PID", "PPID", "UID", "Current User", "Origin User",
-           "Command", "IP Address", "Port", "BinPath");
+           "Command", "IP Address", "Port", "Command Args");
   }
 
   fp = fopen("/var/log/sshtrace.log", "a"); // open file
