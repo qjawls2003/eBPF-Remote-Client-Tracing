@@ -204,7 +204,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
   int userErr;
   uid_t org_user;
   log_trace("%s", "Getting the user BPF map object");
-  int userMap = bpf_obj_get("/sys/fs/bpf/raw_user"); // PID -> user 
+  int userMap = bpf_obj_get("/sys/fs/bpf/raw_user"); // PID -> user
   if (userMap <= 0) {
     log_debug("%s", "No file descriptor returned for the user BPF map object");
   } else {
@@ -313,17 +313,19 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     }
 
     fprintf(fp,
-            "{timestamp:%ld,pid:%d,ppid:%d,uid:%d,currentUser:%s,"
-            "originalUser:%s,command:%s,ip:%s,port:%d,execPath:%s}\n",
+            "{\"timestamp\":%ld,\"pid\":%d,\"ppid\":%d,\"uid\":%d,"
+            "\"currentUser\":\"%s\",\"originalUser\":\"%s\",\"command\":\"%s\","
+            "\"ip\":\"%s\",\"port\":%d,\"execPath\":\"%s\"}\n",
             t, m->pid, m->ppid, m->uid, currentUser, originalUser, m->command,
             sockData.ipAddress, sockData.port, eventArg.args);
+
     if (envVar.print) {
       printf("%-8s %-6d %-6d %-6d %-16s %-16s %-16s %-16s %-16d %-6s\n", ts,
              m->pid, m->ppid, m->uid, currentUser, originalUser, m->command,
              sockData.ipAddress, sockData.port, eventArg.args);
     }
-    //free(currentUser);
-    //free(originalUser);
+    // free(currentUser);
+    // free(originalUser);
 
   } else if (m->type_id == GETPEERNAME) {
     struct ipData ipRes = ipHelper(&m->addr);
@@ -365,8 +367,8 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
         // update PID with the original ssh IP data
         bpf_map_update_elem(addrMap, &m->pid, &tmpSockData, BPF_ANY);
       }
-      //close(portMap);
-      //close(userportMap);
+      // close(portMap);
+      // close(userportMap);
     }
 
   } else if (m->type_id == GETSOCKNAME) {
@@ -407,8 +409,8 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
         log_debug("Port maps file decriptors not found");
       }
 
-      //close(userMapport);
-      //close(map_port);
+      // close(userMapport);
+      // close(map_port);
     }
   } else {
     // no events passed here
@@ -416,7 +418,7 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
   }
 
   // close(sockaddrMap);
-  //close(userMap);
+  // close(userMap);
   log_trace("Exiting handle_event()");
 }
 
