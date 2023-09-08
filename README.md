@@ -7,6 +7,18 @@
 This program allows you to *pin* attribution to all SSH clients. Once a client connects to the host, this program will attribute the client's original IP, port, and user to all command line and execve events.
 The original client information will stay consistent during multiple layers of localhost-to-localhost ssh, sudo su, and the spawning any new shell (/bin/bash, /bin/sh, etc.)
 
+**Example:**
+
+You can see that the user *guac* from *192.168.85.129:50642* executed *ls /home*, *cat /etc/passwd*, and *cat /etc/shadow*
+
+![log_2](https://github.com/qjawls2003/eBPF-Remote-Client-Tracing/assets/35247051/cfa011cc-f205-49b1-b57d-da69c6e6f373)
+
+Then, the user *guac* performes *sudo su* and executes *cat /etc/passwd*. You can see that the original *IP:port* and *username* are preserved in the logs.
+
+![log_3](https://github.com/qjawls2003/eBPF-Remote-Client-Tracing/assets/35247051/85b29ad4-ef17-4d4d-ac2c-7cd39f249eef)
+
+
+
 ## Idea
 
 The core framework of this program revolves around SSH's use of getpeername and getsockname system calls. These system calls contains information about the client and the server IP and port. Using this information, we mapped a user activity (execve syscall) to its original SSH information. 
@@ -57,7 +69,7 @@ The logs are generated in a JSON format (not JSON object).
 ```
 /var/log/sshtrace.log
 ```
-![ssh_4](https://github.com/qjawls2003/eBPF-Remote-Client-Tracing/assets/35247051/6241c4f9-4a5d-4ce4-b523-7f323e153411)
+![log_1](https://github.com/qjawls2003/eBPF-Remote-Client-Tracing/assets/35247051/75991028-a4c2-4fee-8fbb-1f81296a9528)
 
 ## Monitoring
 
