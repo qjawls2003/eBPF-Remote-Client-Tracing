@@ -21,7 +21,7 @@ More detailed description of the program: [https://medium.com/etracing/tracing-s
 
 ## Usage
 ```
-sudo ./sshtrace [-a] [-p] [-v] [-w] [-h]
+sudo ./sshtrace [-a] [-p] [-v] [-w] [-h] [--max-args MAX_ARGS]
 ```
 ```
        ./sshtrace           # trace all ssh-spawned execve syscall\
