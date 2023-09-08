@@ -313,8 +313,9 @@ void handle_event(void *ctx, int cpu, void *data, unsigned int data_sz) {
     }
 
     fprintf(fp,
-            "{timestamp:%ld,pid:%d,ppid:%d,uid:%d,currentUser:%s,"
-            "originalUser:%s,command:%s,ip:%s,port:%d,execPath:%s}\n",
+            "{\"timestamp\":%ld,\"pid\":%d,\"ppid\":%d,\"uid\":%d,"
+            "\"currentUser\":\"%s\",\"originalUser\":\"%s\",\"command\":\"%s\","
+            "\"ip\":\"%s\",\"port\":%d,\"execPath\":\"%s\"}\n",
             t, m->pid, m->ppid, m->uid, currentUser, originalUser, m->command,
             sockData.ipAddress, sockData.port, eventArg.args);
     if (envVar.print) {
