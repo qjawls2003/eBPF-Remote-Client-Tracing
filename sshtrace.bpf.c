@@ -200,7 +200,7 @@ int tp_sys_exit_getsockname(struct trace_event_raw_sys_exit *ctx) {
 const volatile bool filter_cg = false;
 const volatile bool ignore_failed = true;
 const volatile uid_t targ_uid = INVALID_UID;
-
+const volatile int max_args = DEFAULT_MAXARGS;
 static const struct event empty_event = {};
 
 static __always_inline bool valid_uid(uid_t uid) { return uid != INVALID_UID; }
@@ -213,9 +213,9 @@ int tracepoint__syscalls__sys_enter_execve(
   unsigned int ret;
   struct event *event;
   struct task_struct *task;
-  //const char **args = (const char **)(ctx->args[1]);
-  //const char *argp;
- 
+  const char **args = (const char **)(ctx->args[1]);
+  const char *argp;
+  int i;
   if (filter_cg && !bpf_current_task_under_cgroup(&cgroup_map, 0))
     return 0;
 
@@ -251,6 +251,29 @@ int tracepoint__syscalls__sys_enter_execve(
   }
   
   event->args_count++;
+  #pragma unroll
+	for (i = 1; i < TOTAL_MAX_ARGS && i < max_args; i++) {
+		bpf_probe_read_user(&argp, sizeof(argp), &args[i]);
+		if (!argp)
+			return 0;
+
+		if (event->args_size > LAST_ARG)
+			return 0;
+
+		ret = bpf_probe_read_user_str(&event->args[event->args_size], ARGSIZE, argp);
+		if (ret > ARGSIZE)
+			return 0;
+
+		event->args_count++;
+		event->args_size += ret;
+	}
+	/* try to read one more argument to check if there is one */
+	bpf_probe_read_user(&argp, sizeof(argp), &args[max_args]);
+	if (!argp)
+		return 0;
+
+	/* pointer to max_args+1 isn't null, asume we have more arguments */
+	event->args_count++;
   //bpf_printk("Event...arg count: %d, arg: %s", event->args_count, event->args);
   return 0;
 }
