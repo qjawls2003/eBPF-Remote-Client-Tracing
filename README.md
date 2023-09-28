@@ -14,7 +14,7 @@ You can see that the user *guac* from *192.168.85.129:50642* executed *ls /home*
 Timestamp,                PID,    PPID,   UID,    Current User,     Origin User,      Command,          IP Address,       Port,             Command Args
 ![log_2](https://github.com/qjawls2003/eBPF-Remote-Client-Tracing/assets/35247051/cfa011cc-f205-49b1-b57d-da69c6e6f373)
 
-Then, the user *guac* performes *sudo su* and executes *cat /etc/passwd*. You can see that the original *IP:port* and *username* are preserved in the logs.
+Then, the user *guac* performes *sudo su* and executes *cat /etc/shadow*. You can see that the original *IP:port* and *username* are preserved in the logs.
 
 ![log_3](https://github.com/qjawls2003/eBPF-Remote-Client-Tracing/assets/35247051/85b29ad4-ef17-4d4d-ac2c-7cd39f249eef)
 
